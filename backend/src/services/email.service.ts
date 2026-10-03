@@ -5,6 +5,8 @@ import { config } from '../config';
 import { redisIncr, redisExpire, redisTtl } from '../config/redis';
 import { OTPRecord, OTPType } from '../models/OTPRecord';
 
+const EMAIL_SEND_TIMEOUT_MS = 10_000;
+
 const generateOTP = (): string => {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 };
@@ -30,6 +32,9 @@ const createTransporter = () => {
     host: config.email.host,
     port: config.email.port,
     secure: config.email.port === 465,
+    connectionTimeout: EMAIL_SEND_TIMEOUT_MS,
+    greetingTimeout: EMAIL_SEND_TIMEOUT_MS,
+    socketTimeout: EMAIL_SEND_TIMEOUT_MS,
     auth: {
       user: config.email.user,
       pass: config.email.pass,
@@ -46,6 +51,7 @@ const sendEmail = async (message: { to: string; subject: string; html: string })
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ from: config.email.from, ...message }),
+      signal: AbortSignal.timeout(EMAIL_SEND_TIMEOUT_MS),
     });
 
     if (!response.ok) {
