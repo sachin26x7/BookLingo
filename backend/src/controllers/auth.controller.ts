@@ -57,6 +57,17 @@ const refreshCookieOptions = {
 };
 const dummyPasswordHash = bcrypt.hashSync(randomBytes(32).toString('hex'), 12);
 
+const respondToEmailFailure = (res: Response, operation: string, error: unknown): void => {
+  console.error(`[Email] ${operation} failed:`, error);
+  const message = error instanceof Error ? error.message : '';
+  const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
+
+  res.status(rateLimited ? 429 : 503).json({
+    success: false,
+    message: rateLimited ? message : 'Unable to send email right now. Please try again later.',
+  });
+};
+
 export const register = async (req: Request, res: Response): Promise<void> => {
   const { name, email, password, preferredLanguage, proficiencyLevel } = req.body;
 
@@ -64,7 +75,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   if (existing) {
     await bcrypt.hash(password, 12);
     if (!existing.isEmailVerified) {
-      void sendVerificationEmail(email, existing.name).catch(() => undefined);
+      try {
+        await sendVerificationEmail(email, existing.name);
+      } catch (error) {
+        respondToEmailFailure(res, 'Verification email delivery', error);
+        return;
+      }
     }
     res.status(201).json({ success: true, message: 'If registration can be completed, check your email for next steps.' });
     return;
@@ -80,8 +96,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
   await user.save();
 
-  // Send verification email
-  void sendVerificationEmail(email, name).catch(() => undefined);
+  try {
+    await sendVerificationEmail(email, name);
+  } catch (error) {
+    respondToEmailFailure(res, 'Verification email delivery', error);
+    return;
+  }
 
   res.status(201).json({
     success: true,
@@ -109,11 +129,14 @@ export const verifyEmail = async (req: Request, res: Response): Promise<void> =>
 export const resendVerification = async (req: Request, res: Response): Promise<void> => {
   const { email } = req.body;
 
-  try {
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (user && !user.isEmailVerified) void sendVerificationEmail(email, user.name).catch(() => undefined);
-  } catch {
-    // Keep the response indistinguishable for unknown, verified, or throttled addresses.
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (user && !user.isEmailVerified) {
+    try {
+      await sendVerificationEmail(email, user.name);
+    } catch (error) {
+      respondToEmailFailure(res, 'Verification email delivery', error);
+      return;
+    }
   }
 
   res.json({ success: true, message: 'If the address can be verified, a code will be sent.' });
@@ -225,7 +248,12 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   }
 
   if (user) {
-    void sendPasswordResetEmail(email, user.name).catch(() => undefined);
+    try {
+      await sendPasswordResetEmail(email, user.name);
+    } catch (error) {
+      // Keep password-reset responses indistinguishable for unknown and known addresses.
+      console.error('[Email] Password reset email delivery failed:', error);
+    }
   }
 
   res.json({ success: true, message: 'If that email exists, a reset code has been sent.' });

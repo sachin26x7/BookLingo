@@ -22,10 +22,14 @@ const storeOTP = async (identifier: string, type: OTPType, otpHash: string, expi
 };
 
 const createTransporter = () => {
+  if (!config.email.user || !config.email.pass) {
+    throw new Error('EMAIL_USER and EMAIL_PASS must be configured to send email');
+  }
+
   return nodemailer.createTransport({
     host: config.email.host,
     port: config.email.port,
-    secure: false,
+    secure: config.email.port === 465,
     auth: {
       user: config.email.user,
       pass: config.email.pass,
@@ -64,16 +68,12 @@ export const sendVerificationEmail = async (email: string, name: string): Promis
   const hash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + config.otp.expiryMinutes * 60 * 1000);
 
-  // Store in DB (as backup) and Redis
-  await storeOTP(email, 'email_verify', hash, expiresAt);
-
-  try {
-    const transporter = createTransporter();
-    await transporter.sendMail({
-      from: config.email.from,
-      to: email,
-      subject: 'Verify your BookReader account',
-      html: `
+  const transporter = createTransporter();
+  await transporter.sendMail({
+    from: config.email.from,
+    to: email,
+    subject: 'Verify your BookReader account',
+    html: `
         <div style="font-family: 'Georgia', serif; max-width: 480px; margin: 0 auto; padding: 40px 20px; background: #faf8f5; color: #2d2d2d;">
           <h1 style="font-size: 24px; color: #5c4a32; margin-bottom: 8px;">Welcome to BookReader</h1>
           <p style="color: #6b6b6b; margin-bottom: 32px;">Hello ${escapeHtml(name)}, verify your email to start reading.</p>
@@ -85,11 +85,9 @@ export const sendVerificationEmail = async (email: string, name: string): Promis
           <p style="color: #aaa; font-size: 12px; margin-top: 24px; text-align: center;">If you didn't create an account, you can safely ignore this email.</p>
         </div>
       `,
-    });
-  } catch (err) {
-    console.error('Email send failed');
-    // Don't throw — OTP is stored in DB, user can request resend
-  }
+  });
+
+  await storeOTP(email, 'email_verify', hash, expiresAt);
 };
 
 export const sendPasswordResetEmail = async (email: string, name: string): Promise<void> => {
@@ -102,15 +100,12 @@ export const sendPasswordResetEmail = async (email: string, name: string): Promi
   const hash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + config.otp.expiryMinutes * 60 * 1000);
 
-  await storeOTP(email, 'password_reset', hash, expiresAt);
-
-  try {
-    const transporter = createTransporter();
-    await transporter.sendMail({
-      from: config.email.from,
-      to: email,
-      subject: 'Reset your BookReader password',
-      html: `
+  const transporter = createTransporter();
+  await transporter.sendMail({
+    from: config.email.from,
+    to: email,
+    subject: 'Reset your BookReader password',
+    html: `
         <div style="font-family: 'Georgia', serif; max-width: 480px; margin: 0 auto; padding: 40px 20px; background: #faf8f5; color: #2d2d2d;">
           <h1 style="font-size: 24px; color: #5c4a32;">Password Reset</h1>
           <p style="color: #6b6b6b;">Hello ${escapeHtml(name)}, use this code to reset your password.</p>
@@ -120,10 +115,9 @@ export const sendPasswordResetEmail = async (email: string, name: string): Promi
           </div>
         </div>
       `,
-    });
-  } catch (err) {
-    console.error('Password reset email failed');
-  }
+  });
+
+  await storeOTP(email, 'password_reset', hash, expiresAt);
 };
 
 export const verifyOTP = async (identifier: string, otp: string, type: OTPType): Promise<boolean> => {

@@ -31,7 +31,7 @@ export const config = {
     port: parseInt(process.env.EMAIL_PORT || '587', 10),
     user: process.env.EMAIL_USER || '',
     pass: process.env.EMAIL_PASS || '',
-    from: process.env.EMAIL_FROM || 'BookReader <noreply@bookreader.app>',
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'BookReader <noreply@bookreader.app>',
   },
   groqApiKey: process.env.GROQ_API_KEY || '',
   groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
