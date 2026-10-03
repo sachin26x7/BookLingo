@@ -3,8 +3,9 @@ import { useAuthStore } from '../store/authStore';
 
 // In dev, Vite proxies /api → VITE_API_URL (see vite.config.ts)
 // In production builds, use the full backend URL directly
-const baseURL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
+const apiOrigin = import.meta.env.VITE_API_URL?.replace(/\/+$/, '');
+const baseURL = apiOrigin
+  ? `${apiOrigin}/api`
   : '/api';
 
 const api = axios.create({
@@ -53,7 +54,7 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await axios.post('/api/auth/refresh-token', {}, { withCredentials: true });
+        const { data } = await axios.post(`${baseURL}/auth/refresh-token`, {}, { withCredentials: true });
         const newToken = data.data.accessToken;
 
         useAuthStore.getState().setAccessToken(newToken);
