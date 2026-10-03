@@ -21,6 +21,8 @@ import aiRoutes from './routes/ai.routes';
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 // Security & performance middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
