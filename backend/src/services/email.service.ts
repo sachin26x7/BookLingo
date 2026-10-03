@@ -44,13 +44,17 @@ const createTransporter = () => {
 
 const sendEmail = async (message: { to: string; subject: string; html: string }): Promise<void> => {
   if (config.email.resendApiKey) {
+    if (!config.email.resendFrom) {
+      throw new Error('EMAIL_FROM must be set to a sender address verified with Resend');
+    }
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.email.resendApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: config.email.from, ...message }),
+      body: JSON.stringify({ from: config.email.resendFrom, ...message }),
       signal: AbortSignal.timeout(EMAIL_SEND_TIMEOUT_MS),
     });
 
@@ -59,6 +63,10 @@ const sendEmail = async (message: { to: string; subject: string; html: string })
       throw new Error(`Email provider returned HTTP ${response.status}: ${details}`);
     }
     return;
+  }
+
+  if (config.nodeEnv === 'production') {
+    throw new Error('RESEND_API_KEY is required in production; configure Resend instead of SMTP');
   }
 
   const transporter = createTransporter();

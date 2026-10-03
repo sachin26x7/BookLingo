@@ -30,11 +30,21 @@ app.use(helmet({
 app.use(compression());
 app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 
+const allowedOrigins = new Set([
+  config.frontendUrl,
+  'https://bookailingo.netlify.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+]);
+
 // CORS
 app.use(cors({
-  origin: config.nodeEnv === 'production'
-    ? [config.frontendUrl]
-    : [config.frontendUrl, 'http://localhost:5173', 'http://localhost:3000'],
+  origin: (origin, callback) => {
+    const isNetlifyPreview = Boolean(
+      origin && /^https:\/\/[a-z0-9-]+--bookailingo\.netlify\.app$/i.test(origin)
+    );
+    callback(null, !origin || allowedOrigins.has(origin) || isNetlifyPreview);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

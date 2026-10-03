@@ -251,8 +251,8 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     try {
       await sendPasswordResetEmail(email, user.name);
     } catch (error) {
-      // Keep password-reset responses indistinguishable for unknown and known addresses.
-      console.error('[Email] Password reset email delivery failed:', error);
+      respondToEmailFailure(res, 'Password reset email delivery', error);
+      return;
     }
   }
 
