@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { randomBytes } from 'crypto';
+import { performance } from 'node:perf_hooks';
 import bcrypt from 'bcryptjs';
 import { body } from 'express-validator';
 import { User } from '../models/User';
@@ -80,9 +81,17 @@ const respondToEmailFailure = (res: Response, operation: string, error: unknown)
 export const register = async (req: Request, res: Response): Promise<void> => {
   const { name, email, password, preferredLanguage, proficiencyLevel } = req.body;
 
+  let stepStartedAt = performance.now();
   const existing = await User.findOne({ email: email.toLowerCase() });
+  console.info('[REGISTER] User lookup completed:', {
+    durationMs: Math.round(performance.now() - stepStartedAt),
+  });
   if (existing) {
+    stepStartedAt = performance.now();
     await bcrypt.hash(password, 12);
+    console.info('[REGISTER] Duplicate request password check completed:', {
+      durationMs: Math.round(performance.now() - stepStartedAt),
+    });
     if (!existing.isEmailVerified) {
       try {
         await queueOtpEmail(email, existing.name, 'email_verify');
@@ -107,7 +116,22 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     proficiencyLevel: proficiencyLevel || 'intermediate',
   });
 
-  await user.save();
+  stepStartedAt = performance.now();
+  try {
+    await user.save();
+  } catch (error) {
+    if ((error as { code?: number }).code !== 11000) throw error;
+    console.info('[REGISTER] Concurrent duplicate registration detected');
+    res.status(201).json({
+      success: true,
+      message: 'If registration can be completed, a verification code is on its way.',
+      resendAfterSeconds: config.otp.resendCooldownSeconds,
+    });
+    return;
+  }
+  console.info('[REGISTER] User creation completed:', {
+    durationMs: Math.round(performance.now() - stepStartedAt),
+  });
 
   try {
     await queueOtpEmail(email, name, 'email_verify');
@@ -272,7 +296,11 @@ export const logout = async (req: AuthRequest, res: Response): Promise<void> => 
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   const { email } = req.body;
 
+  let stepStartedAt = performance.now();
   const user = await User.findOne({ email: email.toLowerCase() });
+  console.info('[PASSWORD_RESET] User lookup completed:', {
+    durationMs: Math.round(performance.now() - stepStartedAt),
+  });
   // Always return success to prevent email enumeration
   if (!user) {
     res.json({ success: true, message: 'If that email exists, a reset code has been sent.' });
@@ -281,7 +309,11 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
   if (user) {
     try {
+      stepStartedAt = performance.now();
       await queueOtpEmail(email, user.name, 'password_reset');
+      console.info('[PASSWORD_RESET] Email job queued:', {
+        durationMs: Math.round(performance.now() - stepStartedAt),
+      });
     } catch (error) {
       respondToEmailFailure(res, 'Password reset email queueing', error);
       return;

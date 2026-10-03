@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
+import { performance } from 'node:perf_hooks';
 import {
   register,
   verifyEmail,
@@ -22,7 +23,43 @@ import { handleValidationErrors } from '../middleware/error.middleware';
 
 const router = Router();
 
-router.post('/register', registerValidators, handleValidationErrors, register);
+const trackRegisterRequest: RequestHandler = (_req, res, next) => {
+  const startedAt = performance.now();
+  res.locals.registerStartedAt = startedAt;
+  console.info('[REGISTER] Request received');
+  res.once('finish', () => {
+    console.info('[REGISTER] Total time:', {
+      durationMs: Math.round(performance.now() - startedAt),
+      statusCode: res.statusCode,
+    });
+  });
+  next();
+};
+
+const startRegisterValidation: RequestHandler = (_req, res, next) => {
+  res.locals.registerValidationStartedAt = performance.now();
+  next();
+};
+
+const logRegisterValidation: RequestHandler = (_req, res, next) => {
+  const startedAt = res.locals.registerValidationStartedAt as number | undefined;
+  if (startedAt !== undefined) {
+    console.info('[REGISTER] Validation completed:', {
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+  }
+  next();
+};
+
+router.post(
+  '/register',
+  trackRegisterRequest,
+  startRegisterValidation,
+  registerValidators,
+  logRegisterValidation,
+  handleValidationErrors,
+  register
+);
 router.post('/verify-email', verifyEmailValidators, handleValidationErrors, verifyEmail);
 router.post('/resend-verification', resendVerificationValidators, handleValidationErrors, resendVerification);
 router.post('/login', loginValidators, handleValidationErrors, login);

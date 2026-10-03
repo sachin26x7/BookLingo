@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -31,6 +31,7 @@ const RegisterPage: React.FC = () => {
   });
   const [showPw, setShowPw]   = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const submitting = useRef(false);
   const navigate = useNavigate();
 
   const pwChecks = {
@@ -46,7 +47,9 @@ const RegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current) return;
     if (!pwStrong) { toast.error('Please meet all password requirements'); return; }
+    submitting.current = true;
     setIsLoading(true);
     try {
       const response = await authService.register(form);
@@ -57,6 +60,7 @@ const RegisterPage: React.FC = () => {
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Registration failed');
     } finally {
+      submitting.current = false;
       setIsLoading(false);
     }
   };
