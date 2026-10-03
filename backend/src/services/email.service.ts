@@ -37,6 +37,28 @@ const createTransporter = () => {
   });
 };
 
+const sendEmail = async (message: { to: string; subject: string; html: string }): Promise<void> => {
+  if (config.email.resendApiKey) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.email.resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: config.email.from, ...message }),
+    });
+
+    if (!response.ok) {
+      const details = await response.text();
+      throw new Error(`Email provider returned HTTP ${response.status}: ${details}`);
+    }
+    return;
+  }
+
+  const transporter = createTransporter();
+  await transporter.sendMail({ from: config.email.from, ...message });
+};
+
 export const checkOTPRateLimit = async (identifier: string): Promise<{ allowed: boolean; remaining: number; resetIn: number }> => {
   const normalizedIdentifier = identifier.toLowerCase();
   const identifierHash = crypto.createHash('sha256').update(normalizedIdentifier).digest('hex');
@@ -68,9 +90,7 @@ export const sendVerificationEmail = async (email: string, name: string): Promis
   const hash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + config.otp.expiryMinutes * 60 * 1000);
 
-  const transporter = createTransporter();
-  await transporter.sendMail({
-    from: config.email.from,
+  await sendEmail({
     to: email,
     subject: 'Verify your BookReader account',
     html: `
@@ -100,9 +120,7 @@ export const sendPasswordResetEmail = async (email: string, name: string): Promi
   const hash = await bcrypt.hash(otp, 10);
   const expiresAt = new Date(Date.now() + config.otp.expiryMinutes * 60 * 1000);
 
-  const transporter = createTransporter();
-  await transporter.sendMail({
-    from: config.email.from,
+  await sendEmail({
     to: email,
     subject: 'Reset your BookReader password',
     html: `
