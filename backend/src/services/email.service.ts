@@ -65,10 +65,6 @@ const sendEmail = async (message: { to: string; subject: string; html: string })
     return;
   }
 
-  if (config.nodeEnv === 'production') {
-    throw new Error('RESEND_API_KEY is required in production; configure Resend instead of SMTP');
-  }
-
   const transporter = createTransporter();
   await transporter.sendMail({ from: config.email.from, ...message });
 };

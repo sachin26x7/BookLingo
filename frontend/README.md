@@ -18,6 +18,13 @@ backend must also use HTTPS hosts on the same site (for example,
 and an unrelated backend domain are not same-site; use a custom Netlify domain
 under the same parent domain as the backend.
 
+Configure email on the deployed backend, not in Netlify. OTP delivery uses
+Resend when `RESEND_API_KEY` is set (with `EMAIL_FROM` set to a verified sender).
+Otherwise it uses SMTP with `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`,
+`EMAIL_PASS`, and optionally `EMAIL_FROM`. SMTP must be enabled and reachable
+from the backend host; for Gmail, use an app password. These are backend
+environment variables and should not be exposed as frontend `VITE_` variables.
+
 For local development, set `VITE_API_URL` in an ignored `.env` file to your
 backend origin. If it is omitted, the Vite development server proxies `/api`
 to `http://localhost:5000`.
