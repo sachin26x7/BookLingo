@@ -61,10 +61,16 @@ const respondToEmailFailure = (res: Response, operation: string, error: unknown)
   console.error(`[Email] ${operation} failed:`, error);
   const message = error instanceof Error ? error.message : '';
   const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
+  const emailNotConfigured = message.startsWith('EMAIL_USER and EMAIL_PASS must be configured')
+    || message.startsWith('EMAIL_FROM must be set to a sender address verified with Resend');
 
   res.status(rateLimited ? 429 : 503).json({
     success: false,
-    message: rateLimited ? message : 'Unable to send email right now. Please try again later.',
+    message: rateLimited
+      ? message
+      : emailNotConfigured
+        ? 'Email is not configured on the server. Configure the backend email settings and redeploy.'
+        : 'Unable to send email right now. Please try again later.',
   });
 };
 
