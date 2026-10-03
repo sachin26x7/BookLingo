@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import nodemailer, { type Transporter } from 'nodemailer';
 import bcrypt from 'bcryptjs';
-import { performance } from 'node:perf_hooks';
 import { config } from '../config';
 import { EmailJob } from '../models/EmailJob';
 import { OTPRecord, type OTPType } from '../models/OTPRecord';
@@ -9,7 +8,6 @@ import { OTPThrottleState } from '../models/OTPThrottleState';
 
 const EMAIL_SEND_TIMEOUT_MS = 10_000;
 const EMAIL_DNS_TIMEOUT_MS = 5_000;
-const EMAIL_JOB_MAX_ATTEMPTS = 5;
 const EMAIL_JOB_LOCK_MS = 30_000;
 const EMAIL_JOB_POLL_MS = 1_000;
 
@@ -258,28 +256,14 @@ export const queueOtpEmail = async (
       : 'EMAIL_USER and EMAIL_PASS must be configured to send email');
   }
 
-  let stepStartedAt = performance.now();
   await reserveOtpSend(normalizedEmail, type);
-  console.info('[OTP] Rate limit check completed:', {
-    durationMs: Math.round(performance.now() - stepStartedAt),
-  });
 
-  console.info('[OTP] Generation started');
-  stepStartedAt = performance.now();
   const otp = generateOTP();
-  console.info('[OTP] Generation completed:', {
-    durationMs: Math.round(performance.now() - stepStartedAt),
-  });
-  stepStartedAt = performance.now();
   const otpHash = await bcrypt.hash(otp, 10);
-  console.info('[OTP] Hashing completed:', {
-    durationMs: Math.round(performance.now() - stepStartedAt),
-  });
   const now = new Date();
   const expiresAt = new Date(now.getTime() + config.otp.expiryMinutes * 60 * 1000);
   const challengeId = crypto.randomUUID();
 
-  stepStartedAt = performance.now();
   await OTPRecord.updateMany(
     { identifier: normalizedEmail, type, isUsed: false },
     { $set: { isUsed: true } }
@@ -299,11 +283,7 @@ export const queueOtpEmail = async (
     },
     { upsert: true, returnDocument: 'after', sort: { updatedAt: -1 } }
   );
-  console.info('[OTP] Saved:', {
-    durationMs: Math.round(performance.now() - stepStartedAt),
-  });
 
-  stepStartedAt = performance.now();
   const job = await EmailJob.create({
     type,
     identifier: normalizedEmail,
@@ -313,10 +293,7 @@ export const queueOtpEmail = async (
     attempts: 0,
     nextAttemptAt: now,
   });
-  console.info('[OTP] Email job created', {
-    jobId: job.id,
-    durationMs: Math.round(performance.now() - stepStartedAt),
-  });
+  console.info('[OTP] Email job created', { jobId: job.id });
 
   return { resendAfterSeconds: config.otp.resendCooldownSeconds };
 };
@@ -398,13 +375,13 @@ const processNextEmailJob = async (): Promise<boolean> => {
   const job = await claimNextEmailJob();
   if (!job) return false;
 
-  const activeChallenge = await OTPRecord.exists({
+  const activeChallenge = await OTPRecord.findOne({
     identifier: job.identifier,
     type: job.type,
     challengeId: job.challengeId,
     isUsed: false,
     expiresAt: { $gt: new Date() },
-  });
+  }).select('expiresAt').lean();
 
   if (!activeChallenge) {
     await EmailJob.updateOne(
@@ -416,24 +393,22 @@ const processNextEmailJob = async (): Promise<boolean> => {
   }
 
   console.info('[OTP] Email sending started', { jobId: job.id, attempt: job.attempts });
-  const sendStartedAt = performance.now();
   try {
     await deliverEmail(decryptPayload(job.encryptedPayload));
     await EmailJob.updateOne(
       { _id: job._id },
       { $set: { status: 'sent' }, $unset: { lockedUntil: 1, lastErrorCode: 1 } }
     );
-    console.info('[OTP] Email sent successfully', {
-      jobId: job.id,
-      durationMs: Math.round(performance.now() - sendStartedAt),
-    });
+    console.info('[OTP] Email sent successfully', { jobId: job.id });
   } catch (error) {
     const deliveryError = error instanceof EmailDeliveryError
       ? error
       : new EmailDeliveryError('EMAIL_JOB_ERROR', false);
-    const shouldRetry = deliveryError.retryable && job.attempts < EMAIL_JOB_MAX_ATTEMPTS;
-    const delayMs = Math.min(5_000 * (2 ** Math.max(0, job.attempts - 1)), 5 * 60 * 1000);
+    const delayMs = Math.min(5_000 * (2 ** Math.max(0, job.attempts - 1)), 60_000);
     const nextAttemptAt = new Date(Date.now() + delayMs);
+    const shouldRetry = deliveryError.retryable && Boolean(
+      activeChallenge && nextAttemptAt < activeChallenge.expiresAt
+    );
 
     await EmailJob.updateOne(
       { _id: job._id },
@@ -452,7 +427,6 @@ const processNextEmailJob = async (): Promise<boolean> => {
       errorCode: deliveryError.code,
       retryable: deliveryError.retryable,
       attempt: job.attempts,
-      durationMs: Math.round(performance.now() - sendStartedAt),
     });
     if (shouldRetry) {
       console.warn('[OTP] Retry attempt scheduled', {

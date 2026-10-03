@@ -22,8 +22,14 @@ Configure email on the deployed backend, not in Netlify. For production, Resend
 is recommended: set `RESEND_API_KEY` and `EMAIL_FROM` to a sender address
 verified with Resend. If using SMTP instead, set `EMAIL_HOST`, `EMAIL_PORT`,
 `EMAIL_USER`, `EMAIL_PASS`, and optionally `EMAIL_FROM`; SMTP must be enabled
-and reachable from the backend host. For Gmail, use an app password. After
-changing backend variables, redeploy the backend. These are backend environment
+and reachable from the backend host. For Gmail, use an app password. The
+backend must run as a persistent Node service because it processes the email
+queue in the running server; function-only/serverless hosting may stop the
+worker before queued messages are sent. After changing backend variables,
+redeploy the backend. Check the backend logs for `[OTP] Email sending failed`
+and its error code if delivery still fails. Temporary provider/network errors
+are retried while the reset code is valid; invalid credentials or an unverified
+sender must be corrected at the email provider. These are backend environment
 variables and should not be exposed as frontend `VITE_` variables.
 
 For local development, set `VITE_API_URL` in an ignored `.env` file to your
