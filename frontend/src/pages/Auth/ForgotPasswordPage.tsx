@@ -16,7 +16,7 @@ const ForgotPasswordPage: React.FC = () => {
     try {
       await authService.forgotPassword(email);
       setSent(true);
-      toast.success('Reset code sent!');
+      toast.success('If an account exists, a reset code will be sent.');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Request failed');
     } finally {
@@ -31,7 +31,9 @@ const ForgotPasswordPage: React.FC = () => {
           <Mail size={24} color="var(--accent)" />
         </div>
         <h2 style={{ fontFamily: "'Lora', serif", fontSize: 22, marginBottom: 8, color: 'var(--text-primary)' }}>Check your inbox</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: 14 }}>We sent a password reset code to {email}</p>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: 14 }}>
+          If an account exists for {email}, a password reset code will be sent. Check your inbox and spam folder.
+        </p>
         <button className="btn btn-primary" onClick={() => navigate(`/reset-password?email=${encodeURIComponent(email)}`)}>
           Enter reset code
         </button>
@@ -48,7 +50,7 @@ const ForgotPasswordPage: React.FC = () => {
         Forgot password?
       </h1>
       <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 32 }}>
-        Enter your email and we'll send you a reset code.
+        Enter your email to request a password reset code.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

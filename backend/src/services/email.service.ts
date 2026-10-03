@@ -86,7 +86,7 @@ export const checkOTPRateLimit = async (identifier: string): Promise<{ allowed: 
 };
 
 export const sendVerificationEmail = async (email: string, name: string): Promise<void> => {
-  const rateCheck = await checkOTPRateLimit(`email:${email}`);
+  const rateCheck = await checkOTPRateLimit(`email_verify:${email}`);
   if (!rateCheck.allowed) {
     const resetMinutes = Math.ceil(rateCheck.resetIn / 60);
     throw new Error(`Too many OTP requests. Try again in ${resetMinutes} minutes.`);
@@ -117,7 +117,7 @@ export const sendVerificationEmail = async (email: string, name: string): Promis
 };
 
 export const sendPasswordResetEmail = async (email: string, name: string): Promise<void> => {
-  const rateCheck = await checkOTPRateLimit(`email:${email}`);
+  const rateCheck = await checkOTPRateLimit(`password_reset:${email}`);
   if (!rateCheck.allowed) {
     throw new Error(`Too many requests. Please try again later.`);
   }
