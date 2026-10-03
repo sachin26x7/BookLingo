@@ -22,7 +22,7 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
   }
 
   const user = await User.findByIdAndUpdate(req.user?.userId, updates, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true,
   }).select('-passwordHash');
 
@@ -48,7 +48,7 @@ export const updatePreferences = async (req: AuthRequest, res: Response): Promis
   addAllowedSettings('vocabularySettings', vocabularySettings, ['showPronunciation', 'autoSave', 'reviewReminders']);
 
   const user = await User.findByIdAndUpdate(req.user?.userId, updates, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true,
   }).select('-passwordHash');
 

@@ -75,7 +75,7 @@ export const updateAnnotation = async (req: AuthRequest, res: Response): Promise
   const annotation = await Annotation.findOneAndUpdate(
     { _id: req.params.id, userId: req.user!.userId },
     { note, color },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!annotation) {
     res.status(404).json({ success: false, message: 'Annotation not found' });

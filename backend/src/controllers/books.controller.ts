@@ -173,7 +173,7 @@ export const updateBookMetadata = async (req: AuthRequest, res: Response): Promi
   const book = await Book.findOneAndUpdate(
     { _id: req.params.id, userId: req.user!.userId, isDeleted: false },
     { ...(title !== undefined && { title }), ...(author !== undefined && { author }), ...(totalPages !== undefined && { totalPages }) },
-    { new: true, runValidators: true }
+    { returnDocument: 'after', runValidators: true }
   );
 
   if (!book) {

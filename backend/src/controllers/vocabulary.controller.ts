@@ -164,7 +164,11 @@ export const updateWordReview = async (req: AuthRequest, res: Response): Promise
   if (userNotes !== undefined) updates.userNotes = userNotes;
   if (difficultyLevel) updates.difficultyLevel = difficultyLevel;
 
-  const word = await SavedWord.findOneAndUpdate({ _id: id, userId }, updates, { new: true, runValidators: true });
+  const word = await SavedWord.findOneAndUpdate(
+    { _id: id, userId },
+    updates,
+    { returnDocument: 'after', runValidators: true }
+  );
 
   if (!word) {
     res.status(404).json({ success: false, message: 'Word not found' });

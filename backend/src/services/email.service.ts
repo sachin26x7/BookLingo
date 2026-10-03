@@ -105,7 +105,7 @@ const reserveOtpSend = async (identifier: string, type: OTPType): Promise<void> 
           expiresAt: new Date(now.getTime() + windowMs),
         },
       },
-      { new: true }
+      { returnDocument: 'after' }
     ).lean();
 
     if (allowed) return;
@@ -127,7 +127,7 @@ const reserveOtpSend = async (identifier: string, type: OTPType): Promise<void> 
             expiresAt: new Date(now.getTime() + windowMs),
           },
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       ).lean();
 
       if (initialized) return;
@@ -281,7 +281,7 @@ export const queueOtpEmail = async (
       },
       $setOnInsert: { createdAt: now },
     },
-    { upsert: true, new: true, sort: { updatedAt: -1 } }
+    { upsert: true, returnDocument: 'after', sort: { updatedAt: -1 } }
   );
   console.info('[OTP] Saved');
 
@@ -368,7 +368,7 @@ const claimNextEmailJob = async () => {
       },
       $inc: { attempts: 1 },
     },
-    { new: true, sort: { nextAttemptAt: 1 } }
+    { returnDocument: 'after', sort: { nextAttemptAt: 1 } }
   ).select('+encryptedPayload');
 };
 

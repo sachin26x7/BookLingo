@@ -60,7 +60,7 @@ export const upsertProgress = async (req: AuthRequest, res: Response): Promise<v
         },
       },
     },
-    { upsert: true, new: true, runValidators: true }
+    { upsert: true, returnDocument: 'after', runValidators: true }
   );
 
   const stillActive = await Book.exists({ _id: bookId, userId, isDeleted: false });
