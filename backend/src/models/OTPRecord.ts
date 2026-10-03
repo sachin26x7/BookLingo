@@ -9,6 +9,7 @@ export interface IOTPRecord {
   expiresAt: Date;
   attempts: number;
   isUsed: boolean;
+  challengeId: string;
   createdAt: Date;
 }
 
@@ -24,6 +25,7 @@ const OTPRecordSchema = new Schema<IOTPRecord>(
     expiresAt: { type: Date, required: true },
     attempts: { type: Number, default: 0 },
     isUsed: { type: Boolean, default: false },
+    challengeId: { type: String, required: true },
   },
   { timestamps: true }
 );

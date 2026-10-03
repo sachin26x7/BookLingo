@@ -49,9 +49,11 @@ const RegisterPage: React.FC = () => {
     if (!pwStrong) { toast.error('Please meet all password requirements'); return; }
     setIsLoading(true);
     try {
-      await authService.register(form);
-      toast.success('If registration can be completed, check your email for next steps.');
-      navigate(`/verify-email?email=${encodeURIComponent(form.email)}`);
+      const response = await authService.register(form);
+      toast.success('Registration successful. Your verification code is being sent.');
+      navigate(`/verify-email?email=${encodeURIComponent(form.email)}`, {
+        state: { resendAfterSeconds: response.data.resendAfterSeconds },
+      });
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Registration failed');
     } finally {

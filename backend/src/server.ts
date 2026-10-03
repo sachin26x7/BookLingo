@@ -9,6 +9,7 @@ import { config } from './config';
 import { connectDatabase } from './config/database';
 import { getRedisClient } from './config/redis';
 import { errorHandler, notFound } from './middleware/error.middleware';
+import { startEmailWorker } from './services/email.service';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -135,6 +136,7 @@ const start = async () => {
   try {
     await connectDatabase();
     await getRedisClient(); // Connect Redis (non-fatal if fails)
+    startEmailWorker();
 
     app.listen(config.port, () => {
       console.log(`\n🚀 BookReader API running on port ${config.port}`);

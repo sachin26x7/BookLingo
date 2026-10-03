@@ -1,16 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, Mail, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authService } from '../../services/auth.service';
 
 const VerifyEmailPage: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const email = searchParams.get('email') || '';
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [countdown, setCountdown] = useState(0);
+  const [countdown, setCountdown] = useState(() => {
+    const state = location.state as { resendAfterSeconds?: number } | null;
+    return state?.resendAfterSeconds ?? 0;
+  });
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const navigate = useNavigate();
 
@@ -67,10 +71,12 @@ const VerifyEmailPage: React.FC = () => {
   const resend = async () => {
     setIsResending(true);
     try {
-      await authService.resendVerification(email);
-      toast.success('Verification code resent!');
-      setCountdown(60);
+      const response = await authService.resendVerification(email);
+      toast.success('A new verification code is being sent.');
+      setCountdown(response.data.resendAfterSeconds ?? 60);
     } catch (err: any) {
+      const retryAfterSeconds = err.response?.data?.retryAfterSeconds;
+      if (typeof retryAfterSeconds === 'number') setCountdown(retryAfterSeconds);
       toast.error(err.response?.data?.message || 'Failed to resend');
     } finally {
       setIsResending(false);

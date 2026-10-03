@@ -34,6 +34,7 @@ export const config = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'BookReader <noreply@bookreader.app>',
     resendFrom: process.env.EMAIL_FROM || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
+    queueEncryptionSecret: process.env.EMAIL_QUEUE_ENCRYPTION_KEY || refreshSecret,
   },
   groqApiKey: process.env.GROQ_API_KEY || '',
   groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
@@ -43,5 +44,7 @@ export const config = {
     maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS || '3', 10),
     windowMinutes: parseInt(process.env.OTP_WINDOW_MINUTES || '10', 10),
     expiryMinutes: parseInt(process.env.OTP_EXPIRY_MINUTES || '10', 10),
+    resendCooldownSeconds: parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS || '60', 10),
+    verifyMaxAttempts: parseInt(process.env.OTP_VERIFY_MAX_ATTEMPTS || '5', 10),
   },
 };

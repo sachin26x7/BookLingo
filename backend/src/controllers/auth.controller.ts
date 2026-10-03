@@ -11,8 +11,7 @@ import {
   revokeRefreshToken,
 } from '../services/token.service';
 import {
-  sendVerificationEmail,
-  sendPasswordResetEmail,
+  queueOtpEmail,
   verifyOTP,
 } from '../services/email.service';
 import { AuthRequest } from '../middleware/auth.middleware';
@@ -58,19 +57,23 @@ const refreshCookieOptions = {
 const dummyPasswordHash = bcrypt.hashSync(randomBytes(32).toString('hex'), 12);
 
 const respondToEmailFailure = (res: Response, operation: string, error: unknown): void => {
-  console.error(`[Email] ${operation} failed:`, error);
+  console.error(`[OTP] ${operation} failed`, {
+    errorName: error instanceof Error ? error.name : 'UnknownError',
+  });
   const message = error instanceof Error ? error.message : '';
   const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
+  const retryAfterSeconds = (error as { retryAfterSeconds?: number }).retryAfterSeconds || 60;
   const emailNotConfigured = message.startsWith('EMAIL_USER and EMAIL_PASS must be configured')
     || message.startsWith('EMAIL_FROM must be set to a sender address verified with Resend');
 
   res.status(rateLimited ? 429 : 503).json({
     success: false,
     message: rateLimited
-      ? message
+      ? `Please wait ${retryAfterSeconds} seconds before requesting another code.`
       : emailNotConfigured
         ? 'Email is not configured on the server. Configure the backend email settings and redeploy.'
-        : 'Unable to send email right now. Please try again later.',
+        : 'Unable to queue email right now. Please try again later.',
+    ...(rateLimited && { retryAfterSeconds }),
   });
 };
 
@@ -82,13 +85,17 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     await bcrypt.hash(password, 12);
     if (!existing.isEmailVerified) {
       try {
-        await sendVerificationEmail(email, existing.name);
+        await queueOtpEmail(email, existing.name, 'email_verify');
       } catch (error) {
-        respondToEmailFailure(res, 'Verification email delivery', error);
+        respondToEmailFailure(res, 'Verification email queueing', error);
         return;
       }
     }
-    res.status(201).json({ success: true, message: 'If registration can be completed, check your email for next steps.' });
+    res.status(201).json({
+      success: true,
+      message: 'If registration can be completed, a verification code is on its way.',
+      resendAfterSeconds: config.otp.resendCooldownSeconds,
+    });
     return;
   }
 
@@ -103,24 +110,33 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   await user.save();
 
   try {
-    await sendVerificationEmail(email, name);
+    await queueOtpEmail(email, name, 'email_verify');
   } catch (error) {
-    respondToEmailFailure(res, 'Verification email delivery', error);
+    respondToEmailFailure(res, 'Verification email queueing', error);
     return;
   }
 
   res.status(201).json({
     success: true,
-    message: 'If registration can be completed, check your email for next steps.',
+    message: 'If registration can be completed, a verification code is on its way.',
+    resendAfterSeconds: config.otp.resendCooldownSeconds,
   });
 };
 
 export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
   const { email, otp } = req.body;
 
-  const isValid = await verifyOTP(email, otp, 'email_verify');
-  if (!isValid) {
-    res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+  const verification = await verifyOTP(email, otp, 'email_verify');
+  if (verification !== 'valid') {
+    const locked = verification === 'too_many_attempts';
+    res.status(locked ? 429 : 400).json({
+      success: false,
+      message: locked
+        ? 'Too many incorrect codes. Request a new code before trying again.'
+        : verification === 'expired'
+          ? 'This code has expired. Request a new code and try again.'
+          : 'That code is incorrect. Please check it and try again.',
+    });
     return;
   }
 
@@ -138,14 +154,24 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
   const user = await User.findOne({ email: email.toLowerCase() });
   if (user && !user.isEmailVerified) {
     try {
-      await sendVerificationEmail(email, user.name);
+      const queued = await queueOtpEmail(email, user.name, 'email_verify');
+      res.json({
+        success: true,
+        message: 'If the address can be verified, a code will be sent.',
+        resendAfterSeconds: queued.resendAfterSeconds,
+      });
+      return;
     } catch (error) {
-      respondToEmailFailure(res, 'Verification email delivery', error);
+      respondToEmailFailure(res, 'Verification email queueing', error);
       return;
     }
   }
 
-  res.json({ success: true, message: 'If the address can be verified, a code will be sent.' });
+  res.json({
+    success: true,
+    message: 'If the address can be verified, a code will be sent.',
+    resendAfterSeconds: config.otp.resendCooldownSeconds,
+  });
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
@@ -255,9 +281,9 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
   if (user) {
     try {
-      await sendPasswordResetEmail(email, user.name);
+      await queueOtpEmail(email, user.name, 'password_reset');
     } catch (error) {
-      respondToEmailFailure(res, 'Password reset email delivery', error);
+      respondToEmailFailure(res, 'Password reset email queueing', error);
       return;
     }
   }
@@ -268,9 +294,17 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   const { email, otp, newPassword } = req.body;
 
-  const isValid = await verifyOTP(email, otp, 'password_reset');
-  if (!isValid) {
-    res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+  const verification = await verifyOTP(email, otp, 'password_reset');
+  if (verification !== 'valid') {
+    const locked = verification === 'too_many_attempts';
+    res.status(locked ? 429 : 400).json({
+      success: false,
+      message: locked
+        ? 'Too many incorrect codes. Request a new code before trying again.'
+        : verification === 'expired'
+          ? 'This code has expired. Request a new code and try again.'
+          : 'That code is incorrect. Please check it and try again.',
+    });
     return;
   }
 
