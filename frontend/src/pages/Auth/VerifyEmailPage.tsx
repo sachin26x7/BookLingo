@@ -30,12 +30,12 @@ const VerifyEmailPage: React.FC = () => {
   }, [countdown]);
 
   const handleChange = (index: number, value: string) => {
-    if (!/^[0-9]?$/.test(value)) return;
+    if (isLoading || !/^[0-9]?$/.test(value)) return;
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
     if (value && index < 5) inputRefs.current[index + 1]?.focus();
-    if (newOtp.every((d) => d !== '')) submitOtp(newOtp.join(''));
+    if (newOtp.every((d) => d !== '') && !isLoading) submitOtp(newOtp.join(''));
   };
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
@@ -45,15 +45,17 @@ const VerifyEmailPage: React.FC = () => {
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
+    if (isLoading) return;
     e.preventDefault();
     const text = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     const newOtp = [...otp];
     text.split('').forEach((char, i) => { newOtp[i] = char; });
     setOtp(newOtp);
-    if (text.length === 6) submitOtp(text);
+    if (text.length === 6 && !isLoading) submitOtp(text);
   };
 
   const submitOtp = async (otpString: string) => {
+    if (isLoading || otpString.length !== 6 || !email) return;
     setIsLoading(true);
     try {
       await authService.verifyEmail(email, otpString);
@@ -69,6 +71,7 @@ const VerifyEmailPage: React.FC = () => {
   };
 
   const resend = async () => {
+    if (isResending || countdown > 0 || !email) return;
     setIsResending(true);
     try {
       const response = await authService.resendVerification(email);

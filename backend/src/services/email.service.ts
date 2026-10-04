@@ -315,8 +315,12 @@ export const queueOtpEmail = async (
   console.info('[OTP] Email job created', { jobId: job.id });
 
   const deliveryResult = await processNextEmailJob(job.id);
-  if (deliveryResult.status === 'failed') {
-    throw new EmailDeliveryError(deliveryResult.errorCode || 'EMAIL_DELIVERY_FAILED', false);
+  if (deliveryResult.status !== 'sent') {
+    const code = deliveryResult.status === 'failed'
+      ? (deliveryResult.errorCode || 'EMAIL_DELIVERY_FAILED')
+      : 'EMAIL_DELIVERY_NOT_ACCEPTED';
+    const retryable = deliveryResult.status === 'retrying' || deliveryResult.status === 'empty';
+    throw new EmailDeliveryError(code, retryable);
   }
 
   return { resendAfterSeconds: config.otp.resendCooldownSeconds };
