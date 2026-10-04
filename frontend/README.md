@@ -56,9 +56,10 @@ backend service's Environment settings, and redeploy. The sender must belong
 to a domain verified in Resend. Resend's test sender can only deliver to
 verified recipients on the Resend account; production users require a
 verified sending domain. The API responds after queuing the email, so check
-Render logs for `[OTP] Email sending failed` or `Email sent successfully` to
-confirm the provider result. A queued response by itself does not confirm
-delivery.
+OTP delivery is attempted immediately before registration/resend responds;
+temporary provider errors remain queued for retry. Check Render logs for
+`[OTP] Email sending failed`, `Email sent successfully`, or `Retry attempt
+scheduled` to confirm the provider result.
 
 ## Local development
 

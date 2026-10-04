@@ -298,6 +298,8 @@ export const queueOtpEmail = async (
   });
   console.info('[OTP] Email job created', { jobId: job.id });
 
+  await processNextEmailJob(job.id);
+
   return { resendAfterSeconds: config.otp.resendCooldownSeconds };
 };
 
@@ -353,10 +355,11 @@ export const verifyOTP = async (
   return consumed.modifiedCount === 1 ? 'valid' : 'expired';
 };
 
-const claimNextEmailJob = async () => {
+const claimNextEmailJob = async (jobId?: string) => {
   const now = new Date();
   return EmailJob.findOneAndUpdate(
     {
+      ...(jobId ? { _id: jobId } : {}),
       nextAttemptAt: { $lte: now },
       $or: [
         { status: 'queued' },
@@ -374,8 +377,8 @@ const claimNextEmailJob = async () => {
   ).select('+encryptedPayload');
 };
 
-const processNextEmailJob = async (): Promise<boolean> => {
-  const job = await claimNextEmailJob();
+const processNextEmailJob = async (jobId?: string): Promise<boolean> => {
+  const job = await claimNextEmailJob(jobId);
   if (!job) return false;
 
   const activeChallenge = await OTPRecord.findOne({
