@@ -32,7 +32,7 @@ export const config = {
     user: process.env.EMAIL_USER || '',
     pass: process.env.EMAIL_PASS || '',
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'BookReader <noreply@bookreader.app>',
-    resendFrom: process.env.EMAIL_FROM || '',
+    resendFrom: process.env.RESEND_FROM || process.env.EMAIL_FROM || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
     queueEncryptionSecret: process.env.EMAIL_QUEUE_ENCRYPTION_KEY || refreshSecret,
   },

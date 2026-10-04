@@ -17,9 +17,13 @@ serves the built frontend so the app and API share one Railway domain.
    access is needed. When using the included
    single-domain frontend, no `VITE_API_URL` is required; the frontend calls
    `/api` on the same host.
-4. Add the email provider variables (`RESEND_API_KEY` and `EMAIL_FROM`, or
-   `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, and optionally
-   `EMAIL_FROM`) to enable verification and password-reset email.
+4. Configure email on the backend service. For Render, use Resend's HTTP API:
+   set `RESEND_API_KEY` and `RESEND_FROM` (for example,
+   `BookLingo <verify@your-verified-domain.com>`). Verify the sender domain
+   with Resend and publish its required DNS records before testing delivery.
+   The SMTP path can instead use `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`,
+   `EMAIL_PASS`, and optionally `EMAIL_FROM`; use an SMTP provider that permits
+   outbound connections from your host.
 5. Add a Railway volume mounted at `/app/backend/uploads` and set
    `UPLOAD_DIR=/app/backend/uploads` so uploaded PDFs survive redeploys.
    Configure any optional AI integration with `GROQ_API_KEY`.
@@ -46,6 +50,15 @@ cookies across separate hosts, the backend uses `SameSite=None; Secure` in
 production. Browser privacy settings may still block cross-site cookies;
 using a custom frontend and API domain under the same parent domain is more
 reliable.
+
+For OTP delivery on Render, set `RESEND_API_KEY` and `RESEND_FROM` in the
+backend service's Environment settings, and redeploy. The sender must belong
+to a domain verified in Resend. Resend's test sender can only deliver to
+verified recipients on the Resend account; production users require a
+verified sending domain. The API responds after queuing the email, so check
+Render logs for `[OTP] Email sending failed` or `Email sent successfully` to
+confirm the provider result. A queued response by itself does not confirm
+delivery.
 
 ## Local development
 

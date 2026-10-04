@@ -252,7 +252,7 @@ export const queueOtpEmail = async (
   const normalizedEmail = email.toLowerCase();
   if (config.email.resendApiKey ? !config.email.resendFrom : !config.email.user || !config.email.pass) {
     throw new Error(config.email.resendApiKey
-      ? 'EMAIL_FROM must be set to a sender address verified with Resend'
+      ? 'RESEND_FROM must be set to a sender address verified with Resend'
       : 'EMAIL_USER and EMAIL_PASS must be configured to send email');
   }
 

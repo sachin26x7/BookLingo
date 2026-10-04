@@ -65,7 +65,7 @@ const respondToEmailFailure = (res: Response, operation: string, error: unknown)
   const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
   const retryAfterSeconds = (error as { retryAfterSeconds?: number }).retryAfterSeconds || 60;
   const emailNotConfigured = message.startsWith('EMAIL_USER and EMAIL_PASS must be configured')
-    || message.startsWith('EMAIL_FROM must be set to a sender address verified with Resend');
+    || message.startsWith('RESEND_FROM must be set to a sender address verified with Resend');
 
   res.status(rateLimited ? 429 : 503).json({
     success: false,

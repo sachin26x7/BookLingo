@@ -155,6 +155,14 @@ const start = async () => {
   try {
     await connectDatabase();
     await getRedisClient(); // Connect Redis (non-fatal if fails)
+    const emailProvider = config.email.resendApiKey ? 'resend' : 'smtp';
+    const emailConfigured = config.email.resendApiKey
+      ? Boolean(config.email.resendFrom)
+      : Boolean(config.email.user && config.email.pass);
+    console.info('[OTP] Email provider configuration', {
+      provider: emailProvider,
+      configured: emailConfigured,
+    });
     startEmailWorker();
 
     app.listen(config.port, () => {
