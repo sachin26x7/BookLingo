@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
 import { config } from './config';
 import { connectDatabase } from './config/database';
 import { getRedisClient } from './config/redis';
@@ -33,19 +34,13 @@ app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 
 const allowedOrigins = new Set([
   config.frontendUrl,
-  'https://bookailingo.netlify.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ]);
 
 // CORS
 app.use(cors({
-  origin: (origin, callback) => {
-    const isNetlifyPreview = Boolean(
-      origin && /^https:\/\/[a-z0-9-]+--bookailingo\.netlify\.app$/i.test(origin)
-    );
-    callback(null, !origin || allowedOrigins.has(origin) || isNetlifyPreview);
-  },
+  origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -126,6 +121,21 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/vocabulary', vocabularyRoutes);
 app.use('/api/reader', readerRoutes);
 app.use('/api/ai', aiRoutes);
+
+if (config.nodeEnv === 'production') {
+  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  app.use(express.static(frontendDist, { index: false }));
+  app.get('/{*path}', (req, res, next) => {
+    if (req.path.startsWith('/api/') || !req.accepts('html')) {
+      next();
+      return;
+    }
+
+    res.sendFile(path.join(frontendDist, 'index.html'), (error) => {
+      if (error) next(error);
+    });
+  });
+}
 
 // Error handling
 app.use(notFound);

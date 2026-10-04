@@ -1,44 +1,65 @@
-# BookLingo frontend
+# BookLingo
 
-## Deploy to Netlify
+BookLingo is a PDF reader and language-learning app. The frontend is a Vite
+application and the backend is an Express API. In production, the backend
+serves the built frontend so the app and API share one Railway domain.
 
-The repository-root `netlify.toml` builds this Vite app from the `frontend`
-directory, uses Node.js 22, publishes `dist`, and enables SPA route fallback.
-Connect the repository to Netlify and use the default build settings from that
-file.
+## Deploy on Railway
 
-In Netlify, add the `VITE_API_URL` environment variable with the public origin
-of your deployed backend, for example `https://api.example.com`. Enter only
-the origin: do not append `/api` or a trailing slash. Vite embeds this value at
-build time, so trigger a new deploy after changing it. The backend must allow
-requests from your Netlify site and support credentialed requests. BookLingo
-stores its refresh token in a `SameSite=Strict` cookie, so the frontend and
-backend must also use HTTPS hosts on the same site (for example,
-`app.example.com` and `api.example.com`). The default `*.netlify.app` domain
-and an unrelated backend domain are not same-site; use a custom Netlify domain
-under the same parent domain as the backend.
+1. Create a Railway project from this GitHub repository and deploy the
+   repository root as one service. The root `railway.json` builds both apps,
+   starts the API, and configures `/health` as the health check.
+2. Add the backend environment variables in the Railway service settings:
+   `MONGODB_URI`, `JWT_ACCESS_SECRET`, and `JWT_REFRESH_SECRET` are required.
+   The JWT secrets must be different, random, and at least 32 bytes.
+3. Set `NODE_ENV=production`. Set `FRONTEND_URL` to the public Railway URL if
+   cross-origin frontend access is needed. When using the included
+   single-domain frontend, no `VITE_API_URL` is required; the frontend calls
+   `/api` on the same host.
+4. Add the email provider variables (`RESEND_API_KEY` and `EMAIL_FROM`, or
+   `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, and optionally
+   `EMAIL_FROM`) to enable verification and password-reset email.
+5. Add a Railway volume mounted at `/app/backend/uploads` and set
+   `UPLOAD_DIR=/app/backend/uploads` so uploaded PDFs survive redeploys.
+   Configure any optional AI integration with `GROQ_API_KEY`.
+6. Generate a public domain for the service, then redeploy after changing
+   variables or volume settings.
 
-Configure email on the deployed backend, not in Netlify. For production, Resend
-is recommended: set `RESEND_API_KEY` and `EMAIL_FROM` to a sender address
-verified with Resend. If using SMTP instead, set `EMAIL_HOST`, `EMAIL_PORT`,
-`EMAIL_USER`, `EMAIL_PASS`, and optionally `EMAIL_FROM`; SMTP must be enabled
-and reachable from the backend host. For Gmail, use an app password. The
-backend must run as a persistent Node service because it processes the email
-queue in the running server; function-only/serverless hosting may stop the
-worker before queued messages are sent. After changing backend variables,
-redeploy the backend. Check the backend logs for `[OTP] Email sending failed`
-and its error code if delivery still fails. Temporary provider/network errors
-are retried while the reset code is valid; invalid credentials or an unverified
-sender must be corrected at the email provider. These are backend environment
-variables and should not be exposed as frontend `VITE_` variables.
+Railway environment variables must be configured in its dashboard; do not
+commit secrets or copy local `.env` files into the deployment. MongoDB must be
+reachable from the Railway service. Redis is optional and can be configured
+with `REDIS_URL`.
 
-For local development, set `VITE_API_URL` in an ignored `.env` file to your
-backend origin. If it is omitted, the Vite development server proxies `/api`
-to `http://localhost:5000`.
+## Local development
 
-## Build locally
+Run the backend and frontend in separate terminals:
 
 ```sh
+cd backend
 npm ci
-npm run build
+npm run dev
 ```
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+The Vite development server proxies `/api` to `http://localhost:5000` by
+default. Set `VITE_API_URL` in an ignored frontend `.env` file only when the
+backend is hosted at a different origin.
+
+## Local production build
+
+From the repository root:
+
+```sh
+npm ci --prefix frontend
+npm run build --prefix frontend
+npm ci --prefix backend
+npm run build --prefix backend
+```
+
+Start the production API with `npm start --prefix backend`. In production mode,
+it serves the frontend build and supports client-side routes.
