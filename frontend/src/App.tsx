@@ -15,6 +15,7 @@ import RegisterPage from './pages/Auth/RegisterPage';
 import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
+import LandingPage from './pages/LandingPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import LibraryPage from './pages/Library/LibraryPage';
 import ReaderPage from './pages/Reader/ReaderPage';
@@ -157,7 +158,7 @@ const App: React.FC = () => {
         <Route path="/reader/:bookId" element={<ProtectedRoute><ReaderPage /></ProtectedRoute>} />
 
         {/* Redirects */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
