@@ -110,27 +110,30 @@ const reserveOtpSend = async (identifier: string, type: OTPType): Promise<void> 
 
     if (allowed) return;
 
-    try {
-      const initialized = await OTPThrottleState.findOneAndUpdate(
-        {
-          _id: stateId,
-          $or: [
-            { windowStartedAt: { $lte: windowStart } },
-            { windowStartedAt: { $exists: false } },
-          ],
+    const reset = await OTPThrottleState.findOneAndUpdate(
+      { _id: stateId, windowStartedAt: { $lte: windowStart } },
+      {
+        $set: {
+          sendCount: 1,
+          windowStartedAt: now,
+          lastSentAt: now,
+          expiresAt: new Date(now.getTime() + windowMs),
         },
-        {
-          $set: {
-            sendCount: 1,
-            windowStartedAt: now,
-            lastSentAt: now,
-            expiresAt: new Date(now.getTime() + windowMs),
-          },
-        },
-        { upsert: true, returnDocument: 'after' }
-      ).lean();
+      },
+      { returnDocument: 'after' }
+    ).lean();
 
-      if (initialized) return;
+    if (reset) return;
+
+    try {
+      await OTPThrottleState.create({
+        _id: stateId,
+        sendCount: 1,
+        windowStartedAt: now,
+        lastSentAt: now,
+        expiresAt: new Date(now.getTime() + windowMs),
+      });
+      return;
     } catch (error) {
       if ((error as { code?: number }).code !== 11000) throw error;
     }
