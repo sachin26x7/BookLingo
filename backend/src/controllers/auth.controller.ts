@@ -51,7 +51,7 @@ export const changePasswordValidators = [
 const refreshCookieOptions = {
   httpOnly: true,
   secure: config.nodeEnv === 'production',
-  sameSite: 'strict' as const,
+  sameSite: config.nodeEnv === 'production' ? 'none' as const : 'strict' as const,
   path: '/api/auth',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };

@@ -33,7 +33,8 @@ app.use(compression());
 app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 
 const allowedOrigins = new Set([
-  config.frontendUrl,
+  ...config.frontendUrls,
+  'https://book-lingo-4tp7-git-main-sachin3103x5-2655.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ]);
@@ -45,6 +46,14 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  if (origin && !allowedOrigins.has(origin)) {
+    res.status(403).json({ success: false, message: 'Origin not allowed.' });
+    return;
+  }
+  next();
+});
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));

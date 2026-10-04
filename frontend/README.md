@@ -12,8 +12,9 @@ serves the built frontend so the app and API share one Railway domain.
 2. Add the backend environment variables in the Railway service settings:
    `MONGODB_URI`, `JWT_ACCESS_SECRET`, and `JWT_REFRESH_SECRET` are required.
    The JWT secrets must be different, random, and at least 32 bytes.
-3. Set `NODE_ENV=production`. Set `FRONTEND_URL` to the public Railway URL if
-   cross-origin frontend access is needed. When using the included
+3. Set `NODE_ENV=production`. Set `FRONTEND_URL` (or comma-separated
+   `FRONTEND_URLS`) to the exact public frontend origin if cross-origin frontend
+   access is needed. When using the included
    single-domain frontend, no `VITE_API_URL` is required; the frontend calls
    `/api` on the same host.
 4. Add the email provider variables (`RESEND_API_KEY` and `EMAIL_FROM`, or
@@ -29,6 +30,22 @@ Railway environment variables must be configured in its dashboard; do not
 commit secrets or copy local `.env` files into the deployment. MongoDB must be
 reachable from the Railway service. Redis is optional and can be configured
 with `REDIS_URL`.
+
+### Separate Vercel frontend and Render API
+
+If deploying the frontend to Vercel and the API to Render instead, set
+`VITE_API_URL` in the Vercel project to the Render API origin (for example,
+`https://your-api.onrender.com`, without `/api`) and redeploy the frontend.
+On Render, set `FRONTEND_URLS` to the exact Vercel origin(s), comma-separated
+if needed, then redeploy the backend. The API allows the currently configured
+BookLingo Vercel deployment URL as well.
+
+`frontend/vercel.json` rewrites direct browser requests such as `/register` to
+the Vite app so React Router can render them. For reliable refresh-token
+cookies across separate hosts, the backend uses `SameSite=None; Secure` in
+production. Browser privacy settings may still block cross-site cookies;
+using a custom frontend and API domain under the same parent domain is more
+reliable.
 
 ## Local development
 

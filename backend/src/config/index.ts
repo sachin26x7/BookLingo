@@ -38,7 +38,10 @@ export const config = {
   },
   groqApiKey: process.env.GROQ_API_KEY || '',
   groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  frontendUrls: (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
   otp: {
     maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS || '3', 10),
