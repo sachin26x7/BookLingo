@@ -87,22 +87,23 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     durationMs: Math.round(performance.now() - stepStartedAt),
   });
   if (existing) {
-    stepStartedAt = performance.now();
-    await bcrypt.hash(password, 12);
-    console.info('[REGISTER] Duplicate request password check completed:', {
-      durationMs: Math.round(performance.now() - stepStartedAt),
-    });
-    if (!existing.isEmailVerified) {
-      try {
-        await queueOtpEmail(email, existing.name, 'email_verify');
-      } catch (error) {
-        respondToEmailFailure(res, 'Verification email queueing', error);
-        return;
-      }
+    if (existing.isEmailVerified) {
+      res.status(409).json({
+        success: false,
+        message: 'An account with this email already exists. Please sign in or reset your password.',
+      });
+      return;
     }
-    res.status(201).json({
+
+    try {
+      await queueOtpEmail(email, existing.name, 'email_verify');
+    } catch (error) {
+      respondToEmailFailure(res, 'Verification email queueing', error);
+      return;
+    }
+    res.status(200).json({
       success: true,
-      message: 'If registration can be completed, a verification code is on its way.',
+      message: 'This email already has an unverified account. A new verification code is on its way.',
       resendAfterSeconds: config.otp.resendCooldownSeconds,
     });
     return;
@@ -122,9 +123,24 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
     console.info('[REGISTER] Concurrent duplicate registration detected');
-    res.status(201).json({
+    const concurrentUser = await User.findOne({ email: email.toLowerCase() });
+    if (!concurrentUser || concurrentUser.isEmailVerified) {
+      res.status(409).json({
+        success: false,
+        message: 'An account with this email already exists. Please sign in or reset your password.',
+      });
+      return;
+    }
+
+    try {
+      await queueOtpEmail(email, concurrentUser.name, 'email_verify');
+    } catch (queueError) {
+      respondToEmailFailure(res, 'Verification email queueing', queueError);
+      return;
+    }
+    res.status(200).json({
       success: true,
-      message: 'If registration can be completed, a verification code is on its way.',
+      message: 'This email already has an unverified account. A new verification code is on its way.',
       resendAfterSeconds: config.otp.resendCooldownSeconds,
     });
     return;
