@@ -55,9 +55,9 @@ For OTP delivery on Render, set `RESEND_API_KEY` and `RESEND_FROM` in the
 backend service's Environment settings, and redeploy. The sender must belong
 to a domain verified in Resend. Resend's test sender can only deliver to
 verified recipients on the Resend account; production users require a
-verified sending domain. The API responds after queuing the email, so check
-OTP delivery is attempted immediately before registration/resend responds;
-temporary provider errors remain queued for retry. Check Render logs for
+verified sending domain. OTP delivery is attempted immediately before
+registration/resend responds; temporary provider errors remain queued for retry.
+Check Render logs for
 `[OTP] Email sending failed`, `Email sent successfully`, or `Retry attempt
 scheduled` to confirm the provider result.
 
