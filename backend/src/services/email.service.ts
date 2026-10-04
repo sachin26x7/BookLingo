@@ -224,6 +224,22 @@ const deliverEmail = async (payload: OtpEmailPayload): Promise<void> => {
     }
 
     if (!response.ok) {
+      let providerMessage = response.statusText;
+      try {
+        const providerError = await response.json() as { message?: unknown };
+        if (typeof providerError.message === 'string') {
+          providerMessage = providerError.message.replace(
+            /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+            '[recipient]'
+          ).slice(0, 300);
+        }
+      } catch {
+        providerMessage = response.statusText || 'Provider returned a non-JSON error';
+      }
+      console.error('[OTP] Resend rejected email', {
+        httpStatus: response.status,
+        providerMessage,
+      });
       const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
       throw new EmailDeliveryError(`EMAIL_PROVIDER_HTTP_${response.status}`, retryable);
     }
@@ -298,7 +314,10 @@ export const queueOtpEmail = async (
   });
   console.info('[OTP] Email job created', { jobId: job.id });
 
-  await processNextEmailJob(job.id);
+  const deliveryResult = await processNextEmailJob(job.id);
+  if (deliveryResult.status === 'failed') {
+    throw new EmailDeliveryError(deliveryResult.errorCode || 'EMAIL_DELIVERY_FAILED', false);
+  }
 
   return { resendAfterSeconds: config.otp.resendCooldownSeconds };
 };
@@ -377,9 +396,13 @@ const claimNextEmailJob = async (jobId?: string) => {
   ).select('+encryptedPayload');
 };
 
-const processNextEmailJob = async (jobId?: string): Promise<boolean> => {
+type EmailJobProcessingResult =
+  | { status: 'sent' | 'retrying' | 'empty' }
+  | { status: 'failed'; errorCode: string };
+
+const processNextEmailJob = async (jobId?: string): Promise<EmailJobProcessingResult> => {
   const job = await claimNextEmailJob(jobId);
-  if (!job) return false;
+  if (!job) return { status: 'empty' };
 
   const activeChallenge = await OTPRecord.findOne({
     identifier: job.identifier,
@@ -395,7 +418,7 @@ const processNextEmailJob = async (jobId?: string): Promise<boolean> => {
       { $set: { status: 'failed', lastErrorCode: 'OTP_CHALLENGE_EXPIRED' }, $unset: { lockedUntil: 1 } }
     );
     console.info('[OTP] Email job skipped because its challenge is no longer active', { jobId: job.id });
-    return true;
+    return { status: 'failed', errorCode: 'OTP_CHALLENGE_EXPIRED' };
   }
 
   console.info('[OTP] Email sending started', { jobId: job.id, attempt: job.attempts });
@@ -405,7 +428,8 @@ const processNextEmailJob = async (jobId?: string): Promise<boolean> => {
       { _id: job._id },
       { $set: { status: 'sent' }, $unset: { lockedUntil: 1, lastErrorCode: 1 } }
     );
-    console.info('[OTP] Email sent successfully', { jobId: job.id });
+    console.info('[OTP] Email provider accepted message', { jobId: job.id });
+    return { status: 'sent' };
   } catch (error) {
     const deliveryError = error instanceof EmailDeliveryError
       ? error
@@ -440,10 +464,10 @@ const processNextEmailJob = async (jobId?: string): Promise<boolean> => {
         attempt: job.attempts + 1,
         delayMs,
       });
+      return { status: 'retrying' };
     }
+    return { status: 'failed', errorCode: deliveryError.code };
   }
-
-  return true;
 };
 
 export const startEmailWorker = (): void => {
@@ -452,7 +476,8 @@ export const startEmailWorker = (): void => {
     workerBusy = true;
     try {
       for (let processed = 0; processed < 10; processed += 1) {
-        if (!await processNextEmailJob()) break;
+        const result = await processNextEmailJob();
+        if (result.status === 'empty') break;
       }
     } catch (error) {
       console.error('[OTP] Email worker error:', error instanceof Error ? error.name : 'unknown error');

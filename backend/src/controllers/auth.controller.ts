@@ -60,6 +60,9 @@ const dummyPasswordHash = bcrypt.hashSync(randomBytes(32).toString('hex'), 12);
 const respondToEmailFailure = (res: Response, operation: string, error: unknown): void => {
   console.error(`[OTP] ${operation} failed`, {
     errorName: error instanceof Error ? error.name : 'UnknownError',
+    errorCode: error instanceof Error && /^[A-Z0-9_]+$/.test(error.message)
+      ? error.message
+      : 'OTP_DELIVERY_ERROR',
   });
   const message = error instanceof Error ? error.message : '';
   const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
@@ -73,7 +76,7 @@ const respondToEmailFailure = (res: Response, operation: string, error: unknown)
       ? `Please wait ${retryAfterSeconds} seconds before requesting another code.`
       : emailNotConfigured
         ? 'Email is not configured on the server. Configure the backend email settings and redeploy.'
-        : 'Unable to queue email right now. Please try again later.',
+        : 'Unable to send your verification email right now. Please try again later.',
     ...(rateLimited && { retryAfterSeconds }),
   });
 };
