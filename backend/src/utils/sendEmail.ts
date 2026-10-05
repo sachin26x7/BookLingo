@@ -1,5 +1,8 @@
+import dns from 'node:dns';
 import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer';
 import { config } from '../config';
+
+dns.setDefaultResultOrder('ipv4first');
 
 let transporter: Transporter | null = null;
 
@@ -28,7 +31,9 @@ export const verifySMTP = async (): Promise<void> => {
 };
 
 export const sendEmail = async (message: Omit<SendMailOptions, 'from'>): Promise<void> => {
-  const displayName = config.email.from.match(/^(.*?)\s*<[^>]+>$/)?.[1]?.trim() || 'BookLingo';
+  const displayName = config.email.from.match(/^(.*?)\s*<[^>]+>$/)?.[1]?.trim()
+    || config.email.from.trim()
+    || 'BookLingo';
   const info = await getTransporter().sendMail({
     from: `${displayName} <${config.email.user}>`,
     ...message,
