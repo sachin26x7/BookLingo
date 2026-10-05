@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import path from 'path';
 import { config } from './config';
 import { connectDatabase } from './config/database';
@@ -92,7 +92,7 @@ const resendEmailLimiter = rateLimit({
     const email = req.body?.email;
     return typeof email === 'string'
       ? `email:${email.trim().toLowerCase()}`
-      : `ip:${req.ip || 'unknown'}`;
+      : `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
   },
   message: { success: false, message: 'Too many verification email requests. Try again in one minute.' },
 });
@@ -196,13 +196,12 @@ const start = async () => {
   try {
     await connectDatabase();
     await getRedisClient(); // Connect Redis (non-fatal if fails)
-    await initializeEmailService();
-
     app.listen(config.port, () => {
       console.log(`\n🚀 BookReader API running on port ${config.port}`);
       console.log(`   Environment: ${config.nodeEnv}`);
       console.log(`   Health: http://localhost:${config.port}/health\n`);
     });
+    void initializeEmailService();
   } catch (error) {
     console.error('Failed to start server:', error instanceof Error ? error.name : 'unknown error');
     process.exit(1);

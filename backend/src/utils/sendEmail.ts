@@ -12,6 +12,9 @@ const getTransporter = (): Transporter => {
     host: config.email.host,
     port: config.email.port,
     secure: config.email.secure,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 10_000,
     auth: {
       user: config.email.user,
       pass: config.email.pass,
