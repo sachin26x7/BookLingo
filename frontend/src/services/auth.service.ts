@@ -5,8 +5,8 @@ export const authService = {
   register: (data: { name: string; email: string; password: string; preferredLanguage?: string; proficiencyLevel?: string }) =>
     api.post('/auth/register', data),
 
-  verifyEmail: (email: string, otp: string) =>
-    api.post('/auth/verify-email', { email, otp }),
+  verifyEmail: (email: string, token: string) =>
+    api.post('/auth/verify-email', { email, token }),
 
   resendVerification: (email: string) =>
     api.post('/auth/resend-verification', { email }),

@@ -53,7 +53,7 @@ const RegisterPage: React.FC = () => {
     setIsLoading(true);
     try {
       const response = await authService.register(form);
-      toast.success('Registration successful. Your verification code is being sent.');
+      toast.success('Registration successful. Your verification link is being sent.');
       navigate(`/verify-email?email=${encodeURIComponent(form.email)}`, {
         state: { resendAfterSeconds: response.data.resendAfterSeconds },
       });

@@ -10,7 +10,8 @@ import { config } from './config';
 import { connectDatabase } from './config/database';
 import { getRedisClient } from './config/redis';
 import { errorHandler, notFound } from './middleware/error.middleware';
-import { initializeEmailService, startEmailWorker } from './services/email.service';
+import { initializeEmailService } from './services/email.service';
+import { sendTestEmail } from './utils/sendEmail';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -82,6 +83,21 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/', authLimiter);
 
+const resendEmailLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 4,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    return typeof email === 'string'
+      ? `email:${email.trim().toLowerCase()}`
+      : `ip:${req.ip || 'unknown'}`;
+  },
+  message: { success: false, message: 'Too many verification email requests. Try again in one minute.' },
+});
+app.use('/api/auth/resend-verification', resendEmailLimiter);
+
 const recoveryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
@@ -122,6 +138,31 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.post('/api/test-email', async (req, res) => {
+  if (config.nodeEnv === 'production') {
+    res.status(404).json({ success: false, message: 'Not found' });
+    return;
+  }
+  const to = req.body?.email;
+  if (typeof to !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    res.status(400).json({ success: false, message: 'Provide a valid email address.' });
+    return;
+  }
+
+  try {
+    await sendTestEmail(to);
+    res.json({ success: true, message: 'Test email sent.' });
+  } catch (error) {
+    const mailError = error as NodeJS.ErrnoException;
+    console.error('[SMTP] Test email failed:', error);
+    res.status(503).json({
+      success: false,
+      message: mailError.message || 'SMTP test email failed.',
+      ...(mailError.code && { code: mailError.code }),
+    });
+  }
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
@@ -155,8 +196,7 @@ const start = async () => {
   try {
     await connectDatabase();
     await getRedisClient(); // Connect Redis (non-fatal if fails)
-    void initializeEmailService();
-    startEmailWorker();
+    await initializeEmailService();
 
     app.listen(config.port, () => {
       console.log(`\n🚀 BookReader API running on port ${config.port}`);

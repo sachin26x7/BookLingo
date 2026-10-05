@@ -14,6 +14,8 @@ import {
 import {
   queueOtpEmail,
   verifyOTP,
+  sendVerificationEmail,
+  verifyEmailToken,
 } from '../services/email.service';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
@@ -39,7 +41,13 @@ export const loginValidators = [
   body('password').isString().notEmpty().custom((value: string) => Buffer.byteLength(value, 'utf8') <= 72),
 ];
 
-export const verifyEmailValidators = [emailField(), body('otp').isString().matches(/^\d{6}$/)];
+export const verifyEmailValidators = [
+  emailField(),
+  body().custom((value: { token?: unknown; otp?: unknown }) => (
+    (typeof value.token === 'string' && /^[a-f\d]{64}$/i.test(value.token))
+    || (typeof value.otp === 'string' && /^\d{6}$/.test(value.otp))
+  )).withMessage('A valid verification token or code is required'),
+];
 export const resendVerificationValidators = [emailField()];
 export const forgotPasswordValidators = [emailField()];
 export const resetPasswordValidators = [emailField(), body('otp').isString().matches(/^\d{6}$/), passwordField('newPassword')];
@@ -58,18 +66,16 @@ const refreshCookieOptions = {
 const dummyPasswordHash = bcrypt.hashSync(randomBytes(32).toString('hex'), 12);
 
 const respondToEmailFailure = (res: Response, operation: string, error: unknown): void => {
+  const smtpError = error as NodeJS.ErrnoException;
   console.error(`[OTP] ${operation} failed`, {
     errorName: error instanceof Error ? error.name : 'UnknownError',
-    errorCode: error instanceof Error && /^[A-Z0-9_]+$/.test(error.message)
-      ? error.message
-      : 'OTP_DELIVERY_ERROR',
+    errorCode: smtpError.code || 'OTP_DELIVERY_ERROR',
+    errorMessage: error instanceof Error ? error.message : 'Unknown SMTP error',
   });
   const message = error instanceof Error ? error.message : '';
   const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
   const retryAfterSeconds = (error as { retryAfterSeconds?: number }).retryAfterSeconds || 60;
-  const emailNotConfigured = message.startsWith('EMAIL_USER and EMAIL_PASS must be configured')
-    || message.startsWith('RESEND_FROM must be set to a sender address verified with Resend')
-    || message.startsWith('EMAIL_CONFIGURATION_ERROR:');
+  const emailNotConfigured = message.startsWith('EMAIL_CONFIGURATION_ERROR:');
 
   res.status(rateLimited ? 429 : 503).json({
     success: false,
@@ -100,15 +106,15 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     }
 
     try {
-      await queueOtpEmail(email, existing.name, 'email_verify');
+      await sendVerificationEmail(email, existing.name);
     } catch (error) {
       respondToEmailFailure(res, 'Verification email queueing', error);
       return;
     }
     res.status(200).json({
       success: true,
-      message: 'This email already has an unverified account. A new verification code is on its way.',
-      resendAfterSeconds: config.otp.resendCooldownSeconds,
+      message: 'This email already has an unverified account. A new verification link is on its way.',
+      resendAfterSeconds: 15,
     });
     return;
   }
@@ -137,15 +143,15 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     }
 
     try {
-      await queueOtpEmail(email, concurrentUser.name, 'email_verify');
+      await sendVerificationEmail(email, concurrentUser.name);
     } catch (queueError) {
       respondToEmailFailure(res, 'Verification email queueing', queueError);
       return;
     }
     res.status(200).json({
       success: true,
-      message: 'This email already has an unverified account. A new verification code is on its way.',
-      resendAfterSeconds: config.otp.resendCooldownSeconds,
+      message: 'This email already has an unverified account. A new verification link is on its way.',
+      resendAfterSeconds: 15,
     });
     return;
   }
@@ -154,23 +160,31 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   });
 
   try {
-    await queueOtpEmail(email, name, 'email_verify');
+    await sendVerificationEmail(email, name);
   } catch (error) {
-    respondToEmailFailure(res, 'Verification email queueing', error);
+    console.error('[REGISTER] Verification email send failed', {
+      error: error instanceof Error ? error.message : 'Unknown SMTP error',
+    });
+    res.status(503).json({
+      success: false,
+      message: 'Your account was created, but we could not send the verification email. Please use resend verification to request a new link.',
+    });
     return;
   }
 
   res.status(201).json({
     success: true,
-    message: 'If registration can be completed, a verification code is on its way.',
-    resendAfterSeconds: config.otp.resendCooldownSeconds,
+    message: 'If registration can be completed, a verification link is on its way.',
+    resendAfterSeconds: 15,
   });
 };
 
 export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
-  const { email, otp } = req.body;
+  const { email, otp, token } = req.body;
 
-  const verification = await verifyOTP(email, otp, 'email_verify');
+  const verification = token
+    ? await verifyEmailToken(email, token)
+    : await verifyOTP(email, otp, 'email_verify');
   if (verification !== 'valid') {
     const locked = verification === 'too_many_attempts';
     res.status(locked ? 429 : 400).json({
@@ -198,23 +212,24 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
   const user = await User.findOne({ email: email.toLowerCase() });
   if (user && !user.isEmailVerified) {
     try {
-      const queued = await queueOtpEmail(email, user.name, 'email_verify');
+      await sendVerificationEmail(email, user.name);
       res.json({
         success: true,
-        message: 'If the address can be verified, a code will be sent.',
-        resendAfterSeconds: queued.resendAfterSeconds,
+        message: 'If the address can be verified, a verification link will be sent.',
+        resendAfterSeconds: 15,
       });
       return;
     } catch (error) {
-      respondToEmailFailure(res, 'Verification email queueing', error);
-      return;
+      console.error('[EMAIL] Verification resend failed', {
+        error: error instanceof Error ? error.message : 'Unknown SMTP error',
+      });
     }
   }
 
   res.json({
     success: true,
-    message: 'If the address can be verified, a code will be sent.',
-    resendAfterSeconds: config.otp.resendCooldownSeconds,
+    message: 'If the address can be verified, a verification link will be sent.',
+    resendAfterSeconds: 15,
   });
 };
 
