@@ -30,8 +30,8 @@ class EmailConfigurationError extends Error {
 
 const assertEmailConfiguration = (): void => {
   const errors = [
-    !config.email.user && 'SMTP_USER is required.',
-    !config.email.pass && 'SMTP_PASS is required.',
+    !config.email.user && 'EMAIL_USER is required.',
+    !config.email.pass && 'EMAIL_PASS is required.',
   ].filter(Boolean);
   if (errors.length) throw new EmailConfigurationError(errors.join(' '));
 };

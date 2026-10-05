@@ -5,13 +5,13 @@ let transporter: Transporter | null = null;
 
 const getTransporter = (): Transporter => {
   if (!config.email.user || !config.email.pass) {
-    throw new Error('SMTP_USER and SMTP_PASS must be configured.');
+    throw new Error('EMAIL_USER and EMAIL_PASS must be configured.');
   }
 
   transporter ??= nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    host: config.email.host,
+    port: config.email.port,
+    secure: config.email.secure,
     auth: {
       user: config.email.user,
       pass: config.email.pass,
