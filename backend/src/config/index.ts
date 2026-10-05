@@ -27,11 +27,13 @@ export const config = {
     refreshExpire: process.env.JWT_REFRESH_EXPIRE || '7d',
   },
   email: {
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.EMAIL_PORT || '587', 10),
-    user: process.env.EMAIL_USER || '',
-    pass: process.env.EMAIL_PASS || '',
-    from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'BookReader <noreply@bookreader.app>',
+    host: process.env.SMTP_HOST || process.env.EMAIL_HOST || '',
+    port: Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || '587'),
+    secure: process.env.SMTP_SECURE || process.env.EMAIL_SECURE || '',
+    user: process.env.SMTP_USER || process.env.EMAIL_USER || '',
+    pass: process.env.SMTP_PASS || process.env.EMAIL_PASS || '',
+    from: process.env.SMTP_FROM || process.env.EMAIL_FROM
+      || process.env.SMTP_USER || process.env.EMAIL_USER || '',
     resendFrom: process.env.RESEND_FROM || process.env.EMAIL_FROM || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
     queueEncryptionSecret: process.env.EMAIL_QUEUE_ENCRYPTION_KEY || refreshSecret,

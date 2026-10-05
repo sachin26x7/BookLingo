@@ -21,9 +21,13 @@ serves the built frontend so the app and API share one Railway domain.
    set `RESEND_API_KEY` and `RESEND_FROM` (for example,
    `BookLingo <verify@your-verified-domain.com>`). Verify the sender domain
    with Resend and publish its required DNS records before testing delivery.
-   The SMTP path can instead use `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`,
-   `EMAIL_PASS`, and optionally `EMAIL_FROM`; use an SMTP provider that permits
-   outbound connections from your host.
+   SMTP can instead use `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`,
+   `SMTP_PASS`, and optionally `SMTP_FROM`; use the host and TLS mode specified
+   by your SMTP provider. Port 465 requires `SMTP_SECURE=true`; ports 25 and
+   587 require `SMTP_SECURE=false`. For example, use port 465 with implicit
+   TLS, or port 587 with STARTTLS. Legacy `EMAIL_HOST`, `EMAIL_PORT`,
+   `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_SECURE`, and `EMAIL_FROM` names remain
+   supported. Do not commit SMTP credentials.
 5. Add a Railway volume mounted at `/app/backend/uploads` and set
    `UPLOAD_DIR=/app/backend/uploads` so uploaded PDFs survive redeploys.
    Configure any optional AI integration with `GROQ_API_KEY`.
@@ -51,15 +55,16 @@ production. Browser privacy settings may still block cross-site cookies;
 using a custom frontend and API domain under the same parent domain is more
 reliable.
 
-For OTP delivery on Render, set `RESEND_API_KEY` and `RESEND_FROM` in the
-backend service's Environment settings, and redeploy. The sender must belong
-to a domain verified in Resend. Resend's test sender can only deliver to
-verified recipients on the Resend account; production users require a
-verified sending domain. OTP delivery is attempted immediately before
-registration/resend responds; temporary provider errors remain queued for retry.
-Check Render logs for
-`[OTP] Email sending failed`, `Email sent successfully`, or `Retry attempt
-scheduled` to confirm the provider result.
+For OTP delivery on Render, set either `RESEND_API_KEY` and `RESEND_FROM` or
+the SMTP variables above in the backend service's Environment settings, then
+redeploy. The sender must belong to a domain verified by your provider. Resend's
+test sender can only deliver to verified recipients on the Resend account;
+production users require a verified sending domain. Registration persists the
+OTP challenge and encrypted email job before responding; a background worker
+sends queued mail and retries temporary failures. Check Render logs for
+`[OTP] SMTP connection verified`, `[OTP] SMTP transport diagnostic`,
+`[OTP] Email provider accepted message`, and `[OTP] Retry attempt scheduled`
+to distinguish connectivity, acceptance, and retry outcomes.
 
 ## Local development
 

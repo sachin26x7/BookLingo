@@ -10,7 +10,7 @@ import { config } from './config';
 import { connectDatabase } from './config/database';
 import { getRedisClient } from './config/redis';
 import { errorHandler, notFound } from './middleware/error.middleware';
-import { startEmailWorker } from './services/email.service';
+import { initializeEmailService, startEmailWorker } from './services/email.service';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -155,14 +155,7 @@ const start = async () => {
   try {
     await connectDatabase();
     await getRedisClient(); // Connect Redis (non-fatal if fails)
-    const emailProvider = config.email.resendApiKey ? 'resend' : 'smtp';
-    const emailConfigured = config.email.resendApiKey
-      ? Boolean(config.email.resendFrom)
-      : Boolean(config.email.user && config.email.pass);
-    console.info('[OTP] Email provider configuration', {
-      provider: emailProvider,
-      configured: emailConfigured,
-    });
+    void initializeEmailService();
     startEmailWorker();
 
     app.listen(config.port, () => {

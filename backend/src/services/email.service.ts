@@ -10,8 +10,6 @@ const EMAIL_SEND_TIMEOUT_MS = 10_000;
 const EMAIL_DNS_TIMEOUT_MS = 5_000;
 const EMAIL_JOB_LOCK_MS = 30_000;
 const EMAIL_JOB_POLL_MS = 1_000;
-const EMAIL_JOB_RESULT_WAIT_MS = 12_000;
-const EMAIL_JOB_RESULT_POLL_MS = 200;
 
 interface OtpEmailPayload {
   email: string;
@@ -44,8 +42,163 @@ class EmailDeliveryError extends Error {
   }
 }
 
+class EmailConfigurationError extends Error {
+  constructor(message: string) {
+    super(`EMAIL_CONFIGURATION_ERROR: ${message}`);
+    this.name = 'EmailConfigurationError';
+  }
+}
+
+interface EmailConfigurationStatus {
+  provider: 'resend' | 'smtp';
+  configured: boolean;
+  errors: string[];
+  smtp: {
+    host: string;
+    port: number;
+    secure: boolean;
+  };
+}
+
+interface DiagnosticError extends Error {
+  code?: string;
+  command?: string;
+  responseCode?: number;
+  response?: string;
+  syscall?: string;
+  hostname?: string;
+  host?: string;
+  port?: number;
+  address?: string;
+  cause?: unknown;
+}
+
 let smtpTransporter: Transporter | null = null;
 let workerBusy = false;
+
+const getEmailConfigurationStatus = (): EmailConfigurationStatus => {
+  const provider = config.email.resendApiKey ? 'resend' : 'smtp';
+  const errors: string[] = [];
+  const secureSetting = config.email.secure.trim().toLowerCase();
+  const secure = secureSetting
+    ? secureSetting === 'true'
+    : config.email.port === 465;
+
+  if (provider === 'resend') {
+    if (!config.email.resendFrom) {
+      errors.push('RESEND_FROM must be set to a sender address verified with Resend.');
+    }
+  } else {
+    if (!config.email.host) errors.push('SMTP_HOST is required.');
+    if (!Number.isInteger(config.email.port) || config.email.port < 1 || config.email.port > 65535) {
+      errors.push('SMTP_PORT must be an integer between 1 and 65535.');
+    }
+    if (!config.email.user) errors.push('SMTP_USER or EMAIL_USER is required.');
+    if (!config.email.pass) errors.push('SMTP_PASS or EMAIL_PASS is required.');
+
+    if (secureSetting && secureSetting !== 'true' && secureSetting !== 'false') {
+      errors.push('SMTP_SECURE must be either true or false.');
+    } else if (config.email.port === 465 && !secure) {
+      errors.push('SMTP_PORT=465 requires SMTP_SECURE=true (implicit TLS).');
+    } else if ([25, 587].includes(config.email.port) && secure) {
+      errors.push(`SMTP_PORT=${config.email.port} requires SMTP_SECURE=false (STARTTLS).`);
+    } else if (!secureSetting && ![25, 465, 587].includes(config.email.port)) {
+      errors.push('Set SMTP_SECURE explicitly when using a non-standard SMTP port.');
+    }
+  }
+
+  return {
+    provider,
+    configured: errors.length === 0,
+    errors,
+    smtp: {
+      host: config.email.host,
+      port: config.email.port,
+      secure,
+    },
+  };
+};
+
+const assertEmailConfiguration = (): EmailConfigurationStatus => {
+  const status = getEmailConfigurationStatus();
+  if (!status.configured) {
+    throw new EmailConfigurationError(status.errors.join(' '));
+  }
+  return status;
+};
+
+const diagnosticString = (value: unknown): string | undefined => (
+  typeof value === 'string' ? value : undefined
+);
+
+const safeDiagnosticText = (value: string, additionalSecrets: string[] = []): string => {
+  let safeValue = value;
+  for (const secret of [
+    config.email.pass,
+    config.email.user,
+    config.email.resendApiKey,
+    config.jwt.accessSecret,
+    config.jwt.refreshSecret,
+    ...additionalSecrets,
+  ]) {
+    if (secret) safeValue = safeValue.split(secret).join('[redacted]');
+  }
+  return safeValue
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    .replace(/(AUTH\s+(?:PLAIN|LOGIN)\s+)\S+/gi, '$1[redacted]')
+    .slice(0, 500);
+};
+
+const asDiagnosticError = (error: unknown): DiagnosticError => (
+  error instanceof Error ? error as DiagnosticError : new Error('Unknown SMTP error')
+);
+
+const logSmtpDiagnostic = (
+  event: string,
+  error: unknown,
+  additionalSecrets: string[] = []
+): DiagnosticError => {
+  const smtpError = asDiagnosticError(error);
+  const cause = smtpError.cause instanceof Error
+    ? smtpError.cause as DiagnosticError
+    : undefined;
+  const status = getEmailConfigurationStatus();
+  const safeString = (value: unknown): string | undefined => {
+    const text = diagnosticString(value);
+    return text ? safeDiagnosticText(text, additionalSecrets) : undefined;
+  };
+
+  console.error(event, {
+    errorName: smtpError.name,
+    errorCode: safeString(smtpError.code),
+    command: safeString(smtpError.command),
+    responseCode: Number.isInteger(smtpError.responseCode) ? smtpError.responseCode : undefined,
+    response: safeString(smtpError.response),
+    syscall: safeString(smtpError.syscall),
+    hostname: safeString(smtpError.hostname || smtpError.host || status.smtp.host),
+    port: Number.isInteger(smtpError.port) ? smtpError.port : status.smtp.port,
+    address: safeString(smtpError.address),
+    message: safeString(smtpError.message),
+    cause: cause ? {
+      errorName: cause.name,
+      errorCode: safeString(cause.code),
+      syscall: safeString(cause.syscall),
+      hostname: safeString(cause.hostname || cause.host),
+      port: Number.isInteger(cause.port) ? cause.port : undefined,
+      address: safeString(cause.address),
+      message: safeString(cause.message),
+    } : undefined,
+    connection: {
+      secure: status.smtp.secure,
+      tlsServername: status.smtp.host,
+      connectionTimeoutMs: EMAIL_SEND_TIMEOUT_MS,
+      greetingTimeoutMs: EMAIL_SEND_TIMEOUT_MS,
+      dnsTimeoutMs: EMAIL_DNS_TIMEOUT_MS,
+      socketTimeoutMs: EMAIL_SEND_TIMEOUT_MS,
+    },
+  });
+  return smtpError;
+};
 
 const generateOTP = (): string => crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 
@@ -176,14 +329,13 @@ const emailHtml = (payload: OtpEmailPayload): string => {
 };
 
 const createTransporter = (): Transporter => {
-  if (!config.email.user || !config.email.pass) {
-    throw new EmailDeliveryError('EMAIL_NOT_CONFIGURED', false);
-  }
+  const status = assertEmailConfiguration();
+  if (status.provider !== 'smtp') throw new EmailConfigurationError('SMTP is not the configured provider.');
 
   return nodemailer.createTransport({
     host: config.email.host,
     port: config.email.port,
-    secure: config.email.port === 465,
+    secure: status.smtp.secure,
     pool: true,
     maxConnections: 3,
     maxMessages: 100,
@@ -234,17 +386,14 @@ const deliverEmail = async (payload: OtpEmailPayload): Promise<void> => {
       try {
         const providerError = await response.json() as { message?: unknown };
         if (typeof providerError.message === 'string') {
-          providerMessage = providerError.message.replace(
-            /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-            '[recipient]'
-          ).slice(0, 300);
+            providerMessage = safeDiagnosticText(providerError.message, [payload.otp, payload.email]);
         }
       } catch {
         providerMessage = response.statusText || 'Provider returned a non-JSON error';
       }
       console.error('[OTP] Resend rejected email', {
         httpStatus: response.status,
-        providerMessage,
+        providerMessage: safeDiagnosticText(providerMessage, [payload.otp, payload.email]),
       });
       const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
       throw new EmailDeliveryError(`EMAIL_PROVIDER_HTTP_${response.status}`, retryable);
@@ -254,19 +403,35 @@ const deliverEmail = async (payload: OtpEmailPayload): Promise<void> => {
 
   try {
     smtpTransporter ??= createTransporter();
-    await smtpTransporter.sendMail({ from: config.email.from, ...message });
+    const result = await smtpTransporter.sendMail({ from: config.email.from, ...message });
+    if (!result.accepted?.length) {
+      throw new EmailDeliveryError('SMTP_RECIPIENT_NOT_ACCEPTED', false);
+    }
   } catch (error) {
     if (error instanceof EmailDeliveryError) throw error;
-    const deliveryError = error as NodeJS.ErrnoException & { responseCode?: number };
+    const deliveryError = logSmtpDiagnostic(
+      '[OTP] SMTP transport diagnostic',
+      error,
+      [payload.otp, payload.email]
+    );
     const providerResponseCode = Number.isInteger(deliveryError.responseCode)
       ? deliveryError.responseCode
       : undefined;
-    const retryableCodes = new Set([
-      'ECONNECTION', 'ECONNRESET', 'ETIMEDOUT', 'ESOCKET', 'EAI_AGAIN',
+    const cause = deliveryError.cause instanceof Error
+      ? deliveryError.cause as DiagnosticError
+      : undefined;
+    const errorText = `${deliveryError.message} ${cause?.message || ''} ${cause?.code || ''}`;
+    const permanentConfigurationFailure = /CERT_|ERR_TLS_|ERR_SSL_|ERR_OSSL_|certificate.*(?:invalid|expired|match)|self[- ]signed|unable to verify|unable to get local issuer|wrong version number|tlsv\d alert|ssl routines|\bENOTFOUND\b/i
+      .test(errorText);
+    const transientSocketCodes = new Set([
+      'ECONNECTION', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ESOCKET',
+      'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE',
     ]);
-    const retryable = Boolean(
-      (deliveryError.code && retryableCodes.has(deliveryError.code))
-      || (providerResponseCode && providerResponseCode >= 400 && providerResponseCode < 500)
+    const rootCode = cause?.code || deliveryError.code;
+    const retryable = !permanentConfigurationFailure && (
+      providerResponseCode !== undefined
+        ? providerResponseCode >= 400 && providerResponseCode < 500
+        : rootCode !== undefined && transientSocketCodes.has(rootCode)
     );
     const code = deliveryError.code && /^[A-Z0-9_]+$/.test(deliveryError.code)
       ? deliveryError.code
@@ -282,11 +447,7 @@ export const queueOtpEmail = async (
 ): Promise<{ resendAfterSeconds: number }> => {
   const normalizedEmail = email.toLowerCase();
   console.info('[OTP] Email send requested', { type });
-  if (config.email.resendApiKey ? !config.email.resendFrom : !config.email.user || !config.email.pass) {
-    throw new Error(config.email.resendApiKey
-      ? 'RESEND_FROM must be set to a sender address verified with Resend'
-      : 'EMAIL_USER and EMAIL_PASS must be configured to send email');
-  }
+  assertEmailConfiguration();
 
   await reserveOtpSend(normalizedEmail, type);
 
@@ -327,39 +488,6 @@ export const queueOtpEmail = async (
     nextAttemptAt: now,
   });
   console.info('[OTP] Email job created', { jobId: job.id });
-
-  let deliveryResult = await processNextEmailJob(job.id);
-  if (deliveryResult.status === 'empty') {
-    const deadline = Date.now() + EMAIL_JOB_RESULT_WAIT_MS;
-    while (Date.now() < deadline) {
-      const currentJob = await EmailJob.findById(job.id).select('status lastErrorCode').lean();
-      if (!currentJob) {
-        deliveryResult = { status: 'failed', errorCode: 'EMAIL_JOB_MISSING' };
-        break;
-      }
-      if (currentJob.status === 'sent') {
-        deliveryResult = { status: 'sent' };
-        break;
-      }
-      if (currentJob.status === 'failed') {
-        deliveryResult = { status: 'failed', errorCode: currentJob.lastErrorCode || 'EMAIL_DELIVERY_FAILED' };
-        break;
-      }
-      if (currentJob.status === 'queued') {
-        deliveryResult = { status: 'retrying' };
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, EMAIL_JOB_RESULT_POLL_MS));
-    }
-  }
-
-  if (deliveryResult.status !== 'sent') {
-    const code = deliveryResult.status === 'failed'
-      ? (deliveryResult.errorCode || 'EMAIL_DELIVERY_FAILED')
-      : 'EMAIL_DELIVERY_NOT_ACCEPTED';
-    const retryable = deliveryResult.status === 'retrying' || deliveryResult.status === 'empty';
-    throw new EmailDeliveryError(code, retryable);
-  }
 
   return { resendAfterSeconds: config.otp.resendCooldownSeconds };
 };
@@ -416,11 +544,10 @@ export const verifyOTP = async (
   return consumed.modifiedCount === 1 ? 'valid' : 'expired';
 };
 
-const claimNextEmailJob = async (jobId?: string) => {
+const claimNextEmailJob = async () => {
   const now = new Date();
   return EmailJob.findOneAndUpdate(
     {
-      ...(jobId ? { _id: jobId } : {}),
       nextAttemptAt: { $lte: now },
       $or: [
         { status: 'queued' },
@@ -442,8 +569,8 @@ type EmailJobProcessingResult =
   | { status: 'sent' | 'retrying' | 'empty' }
   | { status: 'failed'; errorCode: string };
 
-const processNextEmailJob = async (jobId?: string): Promise<EmailJobProcessingResult> => {
-  const job = await claimNextEmailJob(jobId);
+const processNextEmailJob = async (): Promise<EmailJobProcessingResult> => {
+  const job = await claimNextEmailJob();
   if (!job) return { status: 'empty' };
 
   const activeChallenge = await OTPRecord.findOne({
@@ -523,7 +650,7 @@ const processNextEmailJob = async (jobId?: string): Promise<EmailJobProcessingRe
 
 export const startEmailWorker = (): void => {
   const drainQueue = async (): Promise<void> => {
-    if (workerBusy) return;
+    if (workerBusy || !getEmailConfigurationStatus().configured) return;
     workerBusy = true;
     try {
       for (let processed = 0; processed < 10; processed += 1) {
@@ -540,4 +667,38 @@ export const startEmailWorker = (): void => {
   const timer = setInterval(() => { void drainQueue(); }, EMAIL_JOB_POLL_MS);
   timer.unref();
   void drainQueue();
-}
+};
+
+export const initializeEmailService = async (): Promise<void> => {
+  const status = getEmailConfigurationStatus();
+  console.info('[OTP] Email provider configuration', {
+    provider: status.provider,
+    configured: status.configured,
+    ...(status.provider === 'smtp' && {
+      host: status.smtp.host || undefined,
+      port: status.smtp.port,
+      secure: status.smtp.secure,
+    }),
+  });
+
+  if (!status.configured) {
+    console.error('[OTP] Email provider configuration is invalid', {
+      provider: status.provider,
+      errors: status.errors,
+    });
+    return;
+  }
+  if (status.provider !== 'smtp') return;
+
+  try {
+    smtpTransporter ??= createTransporter();
+    await smtpTransporter.verify();
+    console.info('[OTP] SMTP connection verified', {
+      host: status.smtp.host,
+      port: status.smtp.port,
+      secure: status.smtp.secure,
+    });
+  } catch (error) {
+    logSmtpDiagnostic('[OTP] SMTP startup verification failed', error);
+  }
+};

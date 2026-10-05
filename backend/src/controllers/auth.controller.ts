@@ -68,14 +68,15 @@ const respondToEmailFailure = (res: Response, operation: string, error: unknown)
   const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
   const retryAfterSeconds = (error as { retryAfterSeconds?: number }).retryAfterSeconds || 60;
   const emailNotConfigured = message.startsWith('EMAIL_USER and EMAIL_PASS must be configured')
-    || message.startsWith('RESEND_FROM must be set to a sender address verified with Resend');
+    || message.startsWith('RESEND_FROM must be set to a sender address verified with Resend')
+    || message.startsWith('EMAIL_CONFIGURATION_ERROR:');
 
   res.status(rateLimited ? 429 : 503).json({
     success: false,
     message: rateLimited
       ? `Please wait ${retryAfterSeconds} seconds before requesting another code.`
       : emailNotConfigured
-        ? 'Email is not configured on the server. Configure the backend email settings and redeploy.'
+        ? 'Email is not configured correctly on the server. Configure the backend email settings and redeploy.'
         : 'Unable to send your verification email right now. Please try again later.',
     ...(rateLimited && { retryAfterSeconds }),
   });
