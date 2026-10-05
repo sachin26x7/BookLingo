@@ -32,7 +32,11 @@ class OtpRateLimitError extends Error {
 }
 
 class EmailDeliveryError extends Error {
-  constructor(readonly code: string, readonly retryable: boolean) {
+  constructor(
+    readonly code: string,
+    readonly retryable: boolean,
+    readonly providerResponseCode?: number
+  ) {
     super(code);
     this.name = 'EmailDeliveryError';
   }
@@ -252,14 +256,20 @@ const deliverEmail = async (payload: OtpEmailPayload): Promise<void> => {
   } catch (error) {
     if (error instanceof EmailDeliveryError) throw error;
     const deliveryError = error as NodeJS.ErrnoException & { responseCode?: number };
+    const providerResponseCode = Number.isInteger(deliveryError.responseCode)
+      ? deliveryError.responseCode
+      : undefined;
     const retryableCodes = new Set([
       'ECONNECTION', 'ECONNRESET', 'ETIMEDOUT', 'ESOCKET', 'EAI_AGAIN',
     ]);
     const retryable = Boolean(
       (deliveryError.code && retryableCodes.has(deliveryError.code))
-      || (deliveryError.responseCode && deliveryError.responseCode >= 400 && deliveryError.responseCode < 500)
+      || (providerResponseCode && providerResponseCode >= 400 && providerResponseCode < 500)
     );
-    throw new EmailDeliveryError(deliveryError.code || 'SMTP_DELIVERY_ERROR', retryable);
+    const code = deliveryError.code && /^[A-Z0-9_]+$/.test(deliveryError.code)
+      ? deliveryError.code
+      : 'SMTP_DELIVERY_ERROR';
+    throw new EmailDeliveryError(code, retryable, providerResponseCode);
   }
 };
 
@@ -269,6 +279,7 @@ export const queueOtpEmail = async (
   type: 'email_verify' | 'password_reset'
 ): Promise<{ resendAfterSeconds: number }> => {
   const normalizedEmail = email.toLowerCase();
+  console.info('[OTP] Email send requested', { type });
   if (config.email.resendApiKey ? !config.email.resendFrom : !config.email.user || !config.email.pass) {
     throw new Error(config.email.resendApiKey
       ? 'RESEND_FROM must be set to a sender address verified with Resend'
@@ -302,6 +313,7 @@ export const queueOtpEmail = async (
     },
     { upsert: true, returnDocument: 'after', sort: { updatedAt: -1 } }
   );
+  console.info('[OTP] Challenge saved', { type, challengeId });
 
   const job = await EmailJob.create({
     type,
@@ -425,14 +437,20 @@ const processNextEmailJob = async (jobId?: string): Promise<EmailJobProcessingRe
     return { status: 'failed', errorCode: 'OTP_CHALLENGE_EXPIRED' };
   }
 
-  console.info('[OTP] Email sending started', { jobId: job.id, attempt: job.attempts });
+  const provider = config.email.resendApiKey ? 'resend' : 'smtp';
+  console.info('[OTP] Email sending started', {
+    jobId: job.id,
+    type: job.type,
+    provider,
+    attempt: job.attempts,
+  });
   try {
     await deliverEmail(decryptPayload(job.encryptedPayload));
     await EmailJob.updateOne(
       { _id: job._id },
       { $set: { status: 'sent' }, $unset: { lockedUntil: 1, lastErrorCode: 1 } }
     );
-    console.info('[OTP] Email provider accepted message', { jobId: job.id });
+    console.info('[OTP] Email provider accepted message', { jobId: job.id, provider });
     return { status: 'sent' };
   } catch (error) {
     const deliveryError = error instanceof EmailDeliveryError
@@ -459,6 +477,9 @@ const processNextEmailJob = async (jobId?: string): Promise<EmailJobProcessingRe
     console.error('[OTP] Email sending failed', {
       jobId: job.id,
       errorCode: deliveryError.code,
+      ...(deliveryError.providerResponseCode !== undefined && {
+        providerResponseCode: deliveryError.providerResponseCode,
+      }),
       retryable: deliveryError.retryable,
       attempt: job.attempts,
     });
