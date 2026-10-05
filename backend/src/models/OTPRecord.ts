@@ -11,6 +11,7 @@ export interface IOTPRecord {
   isUsed: boolean;
   challengeId: string;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const OTPRecordSchema = new Schema<IOTPRecord>(
