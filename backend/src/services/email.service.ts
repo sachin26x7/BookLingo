@@ -10,6 +10,8 @@ const EMAIL_SEND_TIMEOUT_MS = 10_000;
 const EMAIL_DNS_TIMEOUT_MS = 5_000;
 const EMAIL_JOB_LOCK_MS = 30_000;
 const EMAIL_JOB_POLL_MS = 1_000;
+const EMAIL_JOB_RESULT_WAIT_MS = 12_000;
+const EMAIL_JOB_RESULT_POLL_MS = 200;
 
 interface OtpEmailPayload {
   email: string;
@@ -326,7 +328,31 @@ export const queueOtpEmail = async (
   });
   console.info('[OTP] Email job created', { jobId: job.id });
 
-  const deliveryResult = await processNextEmailJob(job.id);
+  let deliveryResult = await processNextEmailJob(job.id);
+  if (deliveryResult.status === 'empty') {
+    const deadline = Date.now() + EMAIL_JOB_RESULT_WAIT_MS;
+    while (Date.now() < deadline) {
+      const currentJob = await EmailJob.findById(job.id).select('status lastErrorCode').lean();
+      if (!currentJob) {
+        deliveryResult = { status: 'failed', errorCode: 'EMAIL_JOB_MISSING' };
+        break;
+      }
+      if (currentJob.status === 'sent') {
+        deliveryResult = { status: 'sent' };
+        break;
+      }
+      if (currentJob.status === 'failed') {
+        deliveryResult = { status: 'failed', errorCode: currentJob.lastErrorCode || 'EMAIL_DELIVERY_FAILED' };
+        break;
+      }
+      if (currentJob.status === 'queued') {
+        deliveryResult = { status: 'retrying' };
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, EMAIL_JOB_RESULT_POLL_MS));
+    }
+  }
+
   if (deliveryResult.status !== 'sent') {
     const code = deliveryResult.status === 'failed'
       ? (deliveryResult.errorCode || 'EMAIL_DELIVERY_FAILED')
