@@ -14,8 +14,16 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.8.1",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.3.0",
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
@@ -31,18 +39,10 @@
     "multer": "^2.4.0",
     "nodemailer": "^10.0.13",
     "redis": "^6.3.0",
+    "typescript": "^7.0.2",
     "uuid": "^14.0.2"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/compression": "^1.8.1",
-    "@types/cookie-parser": "^1.4.10",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/morgan": "^1.9.10",
-    "@types/multer": "^2.3.0",
-    "@types/nodemailer": "^8.0.2",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "tsx": "^4.23.15"
   }
 }
