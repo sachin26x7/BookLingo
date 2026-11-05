@@ -7,7 +7,7 @@ import { authService } from '../../services/auth.service';
 const ResetPasswordPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const email = searchParams.get('email') || '';
-  const [otp, setOtp] = useState('');
+  const token = searchParams.get('token') || '';
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +17,7 @@ const ResetPasswordPage: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await authService.resetPassword(email, otp, newPassword);
+      await authService.resetPassword(email, token, newPassword);
       toast.success('Password reset successfully!');
       navigate('/login');
     } catch (err: any) {
@@ -33,16 +33,10 @@ const ResetPasswordPage: React.FC = () => {
         Reset password
       </h1>
       <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 32 }}>
-        Enter the code sent to {email} and your new password.
+        Enter your new password to complete the reset.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div>
-          <label className="label">Reset code</label>
-          <input className="input" type="text" placeholder="6-digit code" inputMode="numeric"
-            maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} required />
-        </div>
-
         <div>
           <label className="label">New password</label>
           <div style={{ position: 'relative' }}>
@@ -57,7 +51,7 @@ const ResetPasswordPage: React.FC = () => {
           </div>
         </div>
 
-        <button type="submit" disabled={isLoading || otp.length !== 6 || newPassword.length < 8}
+        <button type="submit" disabled={isLoading || !email || !token || newPassword.length < 8}
           className="btn btn-primary" style={{ padding: '12px 20px' }}>
           {isLoading ? <Loader2 size={18} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
           {isLoading ? 'Resetting...' : 'Reset password'}

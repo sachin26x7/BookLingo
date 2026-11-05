@@ -25,13 +25,7 @@ const LoginPage: React.FC = () => {
         navigate('/dashboard');
       }
     } catch (err: any) {
-      const msg = err.response?.data?.message || 'Login failed. Please try again.';
-      if (err.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
-        toast.error('Please verify your email first.');
-        navigate(`/verify-email?email=${encodeURIComponent(email)}`);
-      } else {
-        toast.error(msg);
-      }
+      toast.error(err.response?.data?.message || 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

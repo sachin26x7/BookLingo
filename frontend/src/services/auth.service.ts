@@ -1,18 +1,17 @@
 import api from './api';
 import type { User } from '../types';
 
+interface AuthResponse {
+  success: boolean;
+  data: { accessToken: string; user: User };
+}
+
 export const authService = {
   register: (data: { name: string; email: string; password: string; preferredLanguage?: string; proficiencyLevel?: string }) =>
-    api.post('/auth/register', data),
-
-  verifyEmail: (email: string, token: string) =>
-    api.post('/auth/verify-email', { email, token }),
-
-  resendVerification: (email: string) =>
-    api.post('/auth/resend-verification', { email }),
+    api.post<AuthResponse>('/auth/register', data),
 
   login: (email: string, password: string) =>
-    api.post<{ success: boolean; data: { accessToken: string; user: User } }>('/auth/login', { email, password }),
+    api.post<AuthResponse>('/auth/login', { email, password }),
 
   logout: () => api.post('/auth/logout'),
 
@@ -20,8 +19,8 @@ export const authService = {
 
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
 
-  resetPassword: (email: string, otp: string, newPassword: string) =>
-    api.post('/auth/reset-password', { email, otp, newPassword }),
+  resetPassword: (email: string, token: string, newPassword: string) =>
+    api.post('/auth/reset-password', { email, token, newPassword }),
 
   changePassword: (currentPassword: string, newPassword: string) =>
     api.put('/auth/change-password', { currentPassword, newPassword }),

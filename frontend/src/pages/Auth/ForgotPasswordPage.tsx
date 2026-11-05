@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Loader2, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authService } from '../../services/auth.service';
@@ -8,7 +8,6 @@ const ForgotPasswordPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,7 +15,7 @@ const ForgotPasswordPage: React.FC = () => {
     try {
       await authService.forgotPassword(email);
       setSent(true);
-      toast.success('If an account exists, a reset code will be sent.');
+      toast.success('If an account exists, a password reset link will be sent.');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Request failed');
     } finally {
@@ -32,11 +31,8 @@ const ForgotPasswordPage: React.FC = () => {
         </div>
         <h2 style={{ fontFamily: "'Lora', serif", fontSize: 22, marginBottom: 8, color: 'var(--text-primary)' }}>Check your inbox</h2>
         <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: 14 }}>
-          If an account exists for {email}, a password reset code will be sent. Check your inbox and spam folder.
+          If an account exists for {email}, a password reset link will be sent. Check your inbox and spam folder.
         </p>
-        <button className="btn btn-primary" onClick={() => navigate(`/reset-password?email=${encodeURIComponent(email)}`)}>
-          Enter reset code
-        </button>
         <p style={{ marginTop: 16, fontSize: 14 }}>
           <Link to="/login" style={{ color: 'var(--accent)', textDecoration: 'none' }}>← Back to login</Link>
         </p>
@@ -50,7 +46,7 @@ const ForgotPasswordPage: React.FC = () => {
         Forgot password?
       </h1>
       <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 32 }}>
-        Enter your email to request a password reset code.
+        Enter your email to request a password reset link.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -61,7 +57,7 @@ const ForgotPasswordPage: React.FC = () => {
         </div>
         <button type="submit" disabled={isLoading || !email} className="btn btn-primary" style={{ padding: '12px 20px' }}>
           {isLoading ? <Loader2 size={18} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
-          {isLoading ? 'Sending...' : 'Send reset code'}
+          {isLoading ? 'Sending...' : 'Send reset link'}
         </button>
       </form>
 

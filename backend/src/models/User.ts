@@ -7,8 +7,6 @@ export interface IUser extends Document {
   mobile?: string;
   passwordHash: string;
   tokenVersion: number;
-  isEmailVerified: boolean;
-  isMobileVerified: boolean;
   preferredLanguage: string;
   proficiencyLevel: 'beginner' | 'elementary' | 'intermediate' | 'advanced' | 'proficient';
   theme: 'light' | 'dark' | 'sepia';
@@ -41,8 +39,6 @@ const UserSchema = new Schema<IUser>(
     mobile: { type: String, sparse: true, index: true },
     passwordHash: { type: String, required: true, select: false },
     tokenVersion: { type: Number, default: 0, select: false },
-    isEmailVerified: { type: Boolean, default: false },
-    isMobileVerified: { type: Boolean, default: false },
     preferredLanguage: { type: String, default: 'Hindi' },
     proficiencyLevel: {
       type: String,

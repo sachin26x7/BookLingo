@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { performance } from 'node:perf_hooks';
 import bcrypt from 'bcryptjs';
 import { body } from 'express-validator';
-import { User } from '../models/User';
+import { User, type IUser } from '../models/User';
+import { PasswordResetToken } from '../models/PasswordResetToken';
 import {
   generateTokens,
   storeRefreshToken,
@@ -11,12 +12,7 @@ import {
   getStoredRefreshToken,
   revokeRefreshToken,
 } from '../services/token.service';
-import {
-  queueOtpEmail,
-  verifyOTP,
-  sendVerificationEmail,
-  verifyEmailToken,
-} from '../services/email.service';
+import { sendPasswordResetEmail } from '../services/email.service';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
 
@@ -41,16 +37,12 @@ export const loginValidators = [
   body('password').isString().notEmpty().custom((value: string) => Buffer.byteLength(value, 'utf8') <= 72),
 ];
 
-export const verifyEmailValidators = [
-  emailField(),
-  body().custom((value: { token?: unknown; otp?: unknown }) => (
-    (typeof value.token === 'string' && /^[a-f\d]{64}$/i.test(value.token))
-    || (typeof value.otp === 'string' && /^\d{6}$/.test(value.otp))
-  )).withMessage('A valid verification token or code is required'),
-];
-export const resendVerificationValidators = [emailField()];
 export const forgotPasswordValidators = [emailField()];
-export const resetPasswordValidators = [emailField(), body('otp').isString().matches(/^\d{6}$/), passwordField('newPassword')];
+export const resetPasswordValidators = [
+  emailField(),
+  body('token').isString().matches(/^[a-f\d]{64}$/i),
+  passwordField('newPassword'),
+];
 export const changePasswordValidators = [
   body('currentPassword').isString().notEmpty().custom((value: string) => Buffer.byteLength(value, 'utf8') <= 72),
   passwordField('newPassword'),
@@ -65,26 +57,30 @@ const refreshCookieOptions = {
 };
 const dummyPasswordHash = bcrypt.hashSync(randomBytes(32).toString('hex'), 12);
 
-const respondToEmailFailure = (res: Response, operation: string, error: unknown): void => {
-  const smtpError = error as NodeJS.ErrnoException;
-  console.error(`[OTP] ${operation} failed`, {
-    errorName: error instanceof Error ? error.name : 'UnknownError',
-    errorCode: smtpError.code || 'OTP_DELIVERY_ERROR',
-    errorMessage: error instanceof Error ? error.message : 'Unknown SMTP error',
+const createSession = async (user: IUser, res: Response): Promise<void> => {
+  const userId = (user._id as any).toString();
+  const { accessToken, refreshToken } = generateTokens({
+    userId,
+    email: user.email,
+    tokenVersion: user.tokenVersion ?? 0,
   });
-  const message = error instanceof Error ? error.message : '';
-  const rateLimited = message.startsWith('Too many OTP requests.') || message.startsWith('Too many requests.');
-  const retryAfterSeconds = (error as { retryAfterSeconds?: number }).retryAfterSeconds || 60;
-  const emailNotConfigured = message.startsWith('EMAIL_CONFIGURATION_ERROR:');
-
-  res.status(rateLimited ? 429 : 503).json({
-    success: false,
-    message: rateLimited
-      ? `Please wait ${retryAfterSeconds} seconds before requesting another code.`
-      : emailNotConfigured
-        ? 'Email is not configured correctly on the server. Configure the backend email settings and redeploy.'
-        : 'Unable to send your verification email right now. Please try again later.',
-    ...(rateLimited && { retryAfterSeconds }),
+  await storeRefreshToken(userId, refreshToken);
+  res.cookie('refreshToken', refreshToken, refreshCookieOptions);
+  res.json({
+    success: true,
+    data: {
+      accessToken,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        preferredLanguage: user.preferredLanguage,
+        proficiencyLevel: user.proficiencyLevel,
+        theme: user.theme,
+        readingPreferences: user.readingPreferences,
+        vocabularySettings: user.vocabularySettings,
+      },
+    },
   });
 };
 
@@ -97,24 +93,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     durationMs: Math.round(performance.now() - stepStartedAt),
   });
   if (existing) {
-    if (existing.isEmailVerified) {
-      res.status(409).json({
-        success: false,
-        message: 'An account with this email already exists. Please sign in or reset your password.',
-      });
-      return;
-    }
-
-    try {
-      await sendVerificationEmail(email, existing.name);
-    } catch (error) {
-      respondToEmailFailure(res, 'Verification email queueing', error);
-      return;
-    }
-    res.status(200).json({
-      success: true,
-      message: 'This email already has an unverified account. A new verification link is on its way.',
-      resendAfterSeconds: 15,
+    res.status(409).json({
+      success: false,
+      message: 'An account with this email already exists. Please sign in or reset your password.',
     });
     return;
   }
@@ -133,25 +114,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
     console.info('[REGISTER] Concurrent duplicate registration detected');
-    const concurrentUser = await User.findOne({ email: email.toLowerCase() });
-    if (!concurrentUser || concurrentUser.isEmailVerified) {
-      res.status(409).json({
-        success: false,
-        message: 'An account with this email already exists. Please sign in or reset your password.',
-      });
-      return;
-    }
-
-    try {
-      await sendVerificationEmail(email, concurrentUser.name);
-    } catch (queueError) {
-      respondToEmailFailure(res, 'Verification email queueing', queueError);
-      return;
-    }
-    res.status(200).json({
-      success: true,
-      message: 'This email already has an unverified account. A new verification link is on its way.',
-      resendAfterSeconds: 15,
+    res.status(409).json({
+      success: false,
+      message: 'An account with this email already exists. Please sign in or reset your password.',
     });
     return;
   }
@@ -159,78 +124,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     durationMs: Math.round(performance.now() - stepStartedAt),
   });
 
-  try {
-    await sendVerificationEmail(email, name);
-  } catch (error) {
-    console.error('[REGISTER] Verification email send failed', {
-      error: error instanceof Error ? error.message : 'Unknown SMTP error',
-    });
-    res.status(503).json({
-      success: false,
-      message: 'Your account was created, but we could not send the verification email. Please use resend verification to request a new link.',
-    });
-    return;
-  }
-
-  res.status(201).json({
-    success: true,
-    message: 'If registration can be completed, a verification link is on its way.',
-    resendAfterSeconds: 15,
-  });
-};
-
-export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
-  const { email, otp, token } = req.body;
-
-  const verification = token
-    ? await verifyEmailToken(email, token)
-    : await verifyOTP(email, otp, 'email_verify');
-  if (verification !== 'valid') {
-    const locked = verification === 'too_many_attempts';
-    res.status(locked ? 429 : 400).json({
-      success: false,
-      message: locked
-        ? 'Too many incorrect codes. Request a new code before trying again.'
-        : verification === 'expired'
-          ? 'This code has expired. Request a new code and try again.'
-          : 'That code is incorrect. Please check it and try again.',
-    });
-    return;
-  }
-
-  await User.findOneAndUpdate(
-    { email: email.toLowerCase() },
-    { isEmailVerified: true }
-  );
-
-  res.json({ success: true, message: 'Email verified successfully' });
-};
-
-export const resendVerification = async (req: Request, res: Response): Promise<void> => {
-  const { email } = req.body;
-
-  const user = await User.findOne({ email: email.toLowerCase() });
-  if (user && !user.isEmailVerified) {
-    try {
-      await sendVerificationEmail(email, user.name);
-      res.json({
-        success: true,
-        message: 'If the address can be verified, a verification link will be sent.',
-        resendAfterSeconds: 15,
-      });
-      return;
-    } catch (error) {
-      console.error('[EMAIL] Verification resend failed', {
-        error: error instanceof Error ? error.message : 'Unknown SMTP error',
-      });
-    }
-  }
-
-  res.json({
-    success: true,
-    message: 'If the address can be verified, a verification link will be sent.',
-    resendAfterSeconds: 15,
-  });
+  res.status(201);
+  await createSession(user, res);
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
@@ -249,39 +144,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  if (!user.isEmailVerified) {
-    res.status(403).json({ success: false, message: 'Please verify your email before signing in.', code: 'EMAIL_NOT_VERIFIED' });
-    return;
-  }
-
-  const { accessToken, refreshToken } = generateTokens({
-    userId: (user._id as any).toString(),
-    email: user.email,
-    tokenVersion: user.tokenVersion ?? 0,
-  });
-
-  await storeRefreshToken((user._id as any).toString(), refreshToken);
-
-  // Set refresh token as httpOnly cookie
-  res.cookie('refreshToken', refreshToken, refreshCookieOptions);
-
-  res.json({
-    success: true,
-    data: {
-      accessToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        isEmailVerified: user.isEmailVerified,
-        preferredLanguage: user.preferredLanguage,
-        proficiencyLevel: user.proficiencyLevel,
-        theme: user.theme,
-        readingPreferences: user.readingPreferences,
-        vocabularySettings: user.vocabularySettings,
-      },
-    },
-  });
+  await createSession(user, res);
 };
 
 export const refreshToken = async (req: Request, res: Response): Promise<void> => {
@@ -297,7 +160,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
     const storedToken = await getStoredRefreshToken(payload.userId);
     const user = await User.findById(payload.userId).select('+tokenVersion');
 
-    if (!user || !user.isEmailVerified || (payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0) || !storedToken || storedToken !== token) {
+    if (!user || (payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0) || !storedToken || storedToken !== token) {
       res.status(401).json({ success: false, message: 'Invalid refresh token' });
       return;
     }
@@ -336,48 +199,55 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   console.info('[PASSWORD_RESET] User lookup completed:', {
     durationMs: Math.round(performance.now() - stepStartedAt),
   });
-  // Always return success to prevent email enumeration
   if (!user) {
-    res.json({ success: true, message: 'If that email exists, a reset code has been sent.' });
+    res.json({ success: true, message: 'If that email exists, a password reset link has been sent.' });
     return;
   }
 
-  if (user) {
-    try {
-      stepStartedAt = performance.now();
-      await queueOtpEmail(email, user.name, 'password_reset');
-      console.info('[PASSWORD_RESET] Email job queued:', {
-        durationMs: Math.round(performance.now() - stepStartedAt),
-      });
-    } catch (error) {
-      respondToEmailFailure(res, 'Password reset email queueing', error);
-      return;
-    }
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  await PasswordResetToken.deleteMany({ email: user.email });
+  await PasswordResetToken.create({
+    email: user.email,
+    tokenHash,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+
+  try {
+    stepStartedAt = performance.now();
+    await sendPasswordResetEmail(user.email, user.name, token);
+    console.info('[PASSWORD_RESET] Email sent:', {
+      durationMs: Math.round(performance.now() - stepStartedAt),
+    });
+  } catch (error) {
+    await PasswordResetToken.deleteOne({ email: user.email, tokenHash });
+    console.error('[PASSWORD_RESET] Email send failed:', error instanceof Error ? error.message : 'Unknown error');
+    res.status(503).json({
+      success: false,
+      message: 'Unable to send a password reset link right now. Please try again later.',
+    });
+    return;
   }
 
-  res.json({ success: true, message: 'If that email exists, a reset code has been sent.' });
+  res.json({ success: true, message: 'If that email exists, a password reset link has been sent.' });
 };
 
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
-  const { email, otp, newPassword } = req.body;
-
-  const verification = await verifyOTP(email, otp, 'password_reset');
-  if (verification !== 'valid') {
-    const locked = verification === 'too_many_attempts';
-    res.status(locked ? 429 : 400).json({
-      success: false,
-      message: locked
-        ? 'Too many incorrect codes. Request a new code before trying again.'
-        : verification === 'expired'
-          ? 'This code has expired. Request a new code and try again.'
-          : 'That code is incorrect. Please check it and try again.',
-    });
+  const { email, token, newPassword } = req.body;
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const resetToken = await PasswordResetToken.findOneAndDelete({
+    email: email.toLowerCase(),
+    tokenHash,
+    expiresAt: { $gt: new Date() },
+  });
+  if (!resetToken) {
+    res.status(400).json({ success: false, message: 'This password reset link is invalid or expired.' });
     return;
   }
 
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) {
-    res.status(404).json({ success: false, message: 'User not found' });
+    res.status(400).json({ success: false, message: 'This password reset link is invalid or expired.' });
     return;
   }
 

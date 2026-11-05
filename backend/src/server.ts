@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
-import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { rateLimit } from 'express-rate-limit';
 import path from 'path';
 import { config } from './config';
 import { connectDatabase } from './config/database';
@@ -83,31 +83,14 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/', authLimiter);
 
-const resendEmailLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 4,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const email = req.body?.email;
-    return typeof email === 'string'
-      ? `email:${email.trim().toLowerCase()}`
-      : `ip:${ipKeyGenerator(req.ip || '0.0.0.0')}`;
-  },
-  message: { success: false, message: 'Too many verification email requests. Try again in one minute.' },
-});
-app.use('/api/auth/resend-verification', resendEmailLimiter);
-
 const recoveryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many verification attempts, please try again later.' },
+  message: { success: false, message: 'Too many account recovery requests, please try again later.' },
 });
 app.use([
-  '/api/auth/verify-email',
-  '/api/auth/resend-verification',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
 ], recoveryLimiter);

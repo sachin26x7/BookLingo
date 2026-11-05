@@ -12,7 +12,6 @@ import AppLayout from './components/layouts/AppLayout';
 // Pages
 import LoginPage from './pages/Auth/LoginPage';
 import RegisterPage from './pages/Auth/RegisterPage';
-import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
 import LandingPage from './pages/LandingPage';
@@ -140,7 +139,6 @@ const App: React.FC = () => {
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
           <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
         </Route>

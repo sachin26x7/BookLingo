@@ -99,11 +99,6 @@ const ProfilePage: React.FC = () => {
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{user?.email}</p>
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-            {user?.isEmailVerified && (
-              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: '#d1fae5', color: '#047857', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Check size={10} /> Verified
-              </span>
-            )}
             <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-faint)', color: 'var(--accent)' }}>
               {user?.proficiencyLevel}
             </span>

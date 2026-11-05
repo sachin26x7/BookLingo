@@ -41,30 +41,6 @@ export const authenticate = async (
     return;
   }
 
-  if (!user.isEmailVerified) {
-    res.status(403).json({ success: false, message: 'Email verification required', code: 'EMAIL_NOT_VERIFIED' });
-    return;
-  }
-
   req.user = payload;
-  next();
-};
-
-export const requireEmailVerified = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  if (!req.user) {
-    res.status(401).json({ success: false, message: 'Authentication required' });
-    return;
-  }
-
-  const user = await User.findById(req.user.userId);
-  if (!user?.isEmailVerified) {
-    res.status(403).json({ success: false, message: 'Email verification required', code: 'EMAIL_NOT_VERIFIED' });
-    return;
-  }
-
   next();
 };

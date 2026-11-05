@@ -55,16 +55,9 @@ production. Browser privacy settings may still block cross-site cookies;
 using a custom frontend and API domain under the same parent domain is more
 reliable.
 
-For OTP delivery on Render, set either `RESEND_API_KEY` and `RESEND_FROM` or
-the SMTP variables above in the backend service's Environment settings, then
-redeploy. The sender must belong to a domain verified by your provider. Resend's
-test sender can only deliver to verified recipients on the Resend account;
-production users require a verified sending domain. Registration persists the
-OTP challenge and encrypted email job before responding; a background worker
-sends queued mail and retries temporary failures. Check Render logs for
-`[OTP] SMTP connection verified`, `[OTP] SMTP transport diagnostic`,
-`[OTP] Email provider accepted message`, and `[OTP] Retry attempt scheduled`
-to distinguish connectivity, acceptance, and retry outcomes.
+To enable password-reset emails on Render, set the SMTP variables above in the
+backend service's Environment settings, then redeploy. Account registration and
+sign-in do not require email verification.
 
 ## Local development
 

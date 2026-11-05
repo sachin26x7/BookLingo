@@ -4,8 +4,6 @@ export interface User {
   name: string;
   email: string;
   mobile?: string;
-  isEmailVerified: boolean;
-  isMobileVerified: boolean;
   preferredLanguage: string;
   proficiencyLevel: 'beginner' | 'elementary' | 'intermediate' | 'advanced' | 'proficient';
   theme: 'light' | 'dark' | 'sepia';

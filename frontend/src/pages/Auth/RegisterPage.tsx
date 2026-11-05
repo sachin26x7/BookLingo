@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authService } from '../../services/auth.service';
+import { useAuthStore } from '../../store/authStore';
 
 const LEVELS = [
   { value: 'beginner',     label: 'Beginner'     },
@@ -33,6 +34,7 @@ const RegisterPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const submitting = useRef(false);
   const navigate = useNavigate();
+  const { login } = useAuthStore();
 
   const pwChecks = {
     length:    form.password.length >= 8,
@@ -52,11 +54,11 @@ const RegisterPage: React.FC = () => {
     submitting.current = true;
     setIsLoading(true);
     try {
-      const response = await authService.register(form);
-      toast.success('Registration successful. Your verification link is being sent.');
-      navigate(`/verify-email?email=${encodeURIComponent(form.email)}`, {
-        state: { resendAfterSeconds: response.data.resendAfterSeconds },
-      });
+      const { data } = await authService.register(form);
+      login(data.data.user, data.data.accessToken);
+      document.documentElement.setAttribute('data-theme', data.data.user.theme || 'light');
+      toast.success(`Welcome, ${data.data.user.name.split(' ')[0]}!`);
+      navigate('/dashboard');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Registration failed');
     } finally {

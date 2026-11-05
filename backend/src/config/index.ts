@@ -33,7 +33,6 @@ export const config = {
     user: process.env.EMAIL_USER || '',
     pass: process.env.EMAIL_PASS || '',
     from: process.env.EMAIL_FROM || `BookLingo <${process.env.EMAIL_USER || ''}>`,
-    queueEncryptionSecret: process.env.EMAIL_QUEUE_ENCRYPTION_KEY || refreshSecret,
   },
   clientUrl: (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, ''),
   groqApiKey: process.env.GROQ_API_KEY || '',
@@ -43,11 +42,4 @@ export const config = {
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean),
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
-  otp: {
-    maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS || '3', 10),
-    windowMinutes: parseInt(process.env.OTP_WINDOW_MINUTES || '10', 10),
-    expiryMinutes: parseInt(process.env.OTP_EXPIRY_MINUTES || '10', 10),
-    resendCooldownSeconds: parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS || '60', 10),
-    verifyMaxAttempts: parseInt(process.env.OTP_VERIFY_MAX_ATTEMPTS || '5', 10),
-  },
 };

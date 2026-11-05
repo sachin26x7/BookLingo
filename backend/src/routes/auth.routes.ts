@@ -2,8 +2,6 @@ import { Router, type RequestHandler } from 'express';
 import { performance } from 'node:perf_hooks';
 import {
   register,
-  verifyEmail,
-  resendVerification,
   login,
   logout,
   refreshToken,
@@ -12,8 +10,6 @@ import {
   changePassword,
   registerValidators,
   loginValidators,
-  verifyEmailValidators,
-  resendVerificationValidators,
   forgotPasswordValidators,
   resetPasswordValidators,
   changePasswordValidators,
@@ -60,8 +56,6 @@ router.post(
   handleValidationErrors,
   register
 );
-router.post('/verify-email', verifyEmailValidators, handleValidationErrors, verifyEmail);
-router.post('/resend-verification', resendVerificationValidators, handleValidationErrors, resendVerification);
 router.post('/login', loginValidators, handleValidationErrors, login);
 router.post('/refresh-token', refreshToken);
 router.post('/logout', authenticate, logout);
