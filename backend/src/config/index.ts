@@ -19,7 +19,6 @@ export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   mongoUri: process.env.MONGODB_URI || '',
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   jwt: {
     accessSecret,
     refreshSecret,

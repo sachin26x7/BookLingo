@@ -8,7 +8,6 @@ import { rateLimit } from 'express-rate-limit';
 import path from 'path';
 import { config } from './config';
 import { connectDatabase } from './config/database';
-import { getRedisClient } from './config/redis';
 import { errorHandler, notFound } from './middleware/error.middleware';
 import { initializeEmailService } from './services/email.service';
 import { sendTestEmail } from './utils/sendEmail';
@@ -178,7 +177,6 @@ app.use(errorHandler);
 const start = async () => {
   try {
     await connectDatabase();
-    await getRedisClient(); // Connect Redis (non-fatal if fails)
     app.listen(config.port, () => {
       console.log(`\n🚀 BookReader API running on port ${config.port}`);
       console.log(`   Environment: ${config.nodeEnv}`);

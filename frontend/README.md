@@ -36,8 +36,8 @@ serves the built frontend so the app and API share one Railway domain.
 
 Railway environment variables must be configured in its dashboard; do not
 commit secrets or copy local `.env` files into the deployment. MongoDB must be
-reachable from the Railway service. Redis is optional and can be configured
-with `REDIS_URL`.
+reachable from the backend service. Refresh-token hashes are stored on each
+MongoDB user document, so Redis is not required.
 
 ### Separate Vercel frontend and Render API
 

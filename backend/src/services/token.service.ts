@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import { createHash } from 'crypto';
 import { config } from '../config';
-import { redisSet, redisDel, redisGet } from '../config/redis';
+import { User } from '../models/User';
 
 export interface TokenPayload {
   userId: string;
@@ -36,16 +37,15 @@ export const verifyRefreshToken = (token: string): TokenPayload => {
 };
 
 export const storeRefreshToken = async (userId: string, refreshToken: string): Promise<void> => {
-  const key = `session:${userId}`;
-  const ttlSeconds = 7 * 24 * 60 * 60; // 7 days
-  await redisSet(key, refreshToken, ttlSeconds);
+  const refreshTokenHash = createHash('sha256').update(refreshToken).digest('hex');
+  await User.updateOne({ _id: userId }, { $set: { refreshTokenHash } });
 };
 
 export const revokeRefreshToken = async (userId: string): Promise<void> => {
-  const key = `session:${userId}`;
-  await redisDel(key);
+  await User.updateOne({ _id: userId }, { $unset: { refreshTokenHash: 1 } });
 };
 
-export const getStoredRefreshToken = async (userId: string): Promise<string | null> => {
-  return await redisGet(`session:${userId}`);
+export const getStoredRefreshTokenHash = async (userId: string): Promise<string | null> => {
+  const user = await User.findById(userId).select('+refreshTokenHash').lean();
+  return user?.refreshTokenHash ?? null;
 };

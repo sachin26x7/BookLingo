@@ -1,6 +1,4 @@
-import crypto from 'crypto';
 import { config } from '../config';
-import { redisGet, redisSet } from '../config/redis';
 
 interface ExplainWordRequest {
   word: string;
@@ -23,21 +21,6 @@ interface WordExplanation {
   exampleSentence: string;
   difficulty: 'easy' | 'medium' | 'hard';
 }
-
-const CACHE_TTL = 24 * 60 * 60; // 24 hours
-
-const getCacheKey = (req: ExplainWordRequest): string => {
-  const content = JSON.stringify({
-    word: req.word.toLowerCase(),
-    sentence: req.sentence,
-    paragraph: req.paragraph,
-    previousSentence: req.previousSentence,
-    nextSentence: req.nextSentence,
-    targetLanguage: req.targetLanguage || 'Hindi',
-    userLevel: req.userLevel || 'intermediate',
-  });
-  return `explain:v2:${crypto.createHash('md5').update(content).digest('hex')}`;
-};
 
 const SYSTEM_INSTRUCTION = `You are a contextual vocabulary assistant embedded inside a book reader application.
 Explain the selected word or phrase using its exact sentence and surrounding book context. Determine its meaning from context first; do not default to the most common dictionary meaning. Explain idioms according to their actual use, and mention ambiguity only when the supplied context genuinely supports multiple readings. Write contextualMeaning in the requested target language, not English, unless English is the target language. Keep simpleExplanation in clear, simple English. Write translation as a natural equivalent in the requested target language. Do not include unrelated meanings or extra explanation.
@@ -69,19 +52,6 @@ Return ONLY this JSON structure (no markdown or extra keys):
 };
 
 export const explainWord = async (req: ExplainWordRequest): Promise<WordExplanation> => {
-  const cacheKey = getCacheKey(req);
-
-  // Check Redis cache first
-  const cached = await redisGet(cacheKey);
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      return parsed;
-    } catch {
-      // Continue to API call if cache is corrupted
-    }
-  }
-
   if (!config.groqApiKey) {
     console.warn('[AI] GROQ_API_KEY is not set in .env — returning mock explanation.');
     return getMockExplanation(req, 'missing');
@@ -121,9 +91,6 @@ export const explainWord = async (req: ExplainWordRequest): Promise<WordExplanat
     } catch {
       throw new Error('Failed to parse AI response');
     }
-
-    // Cache the result
-    await redisSet(cacheKey, JSON.stringify(explanation), CACHE_TTL);
 
     return explanation;
   } catch (error: any) {

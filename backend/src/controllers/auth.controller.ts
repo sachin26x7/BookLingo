@@ -9,7 +9,7 @@ import {
   generateTokens,
   storeRefreshToken,
   verifyRefreshToken,
-  getStoredRefreshToken,
+  getStoredRefreshTokenHash,
   revokeRefreshToken,
 } from '../services/token.service';
 import { sendPasswordResetEmail } from '../services/email.service';
@@ -157,10 +157,11 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
 
   try {
     const payload = verifyRefreshToken(token);
-    const storedToken = await getStoredRefreshToken(payload.userId);
+    const storedTokenHash = await getStoredRefreshTokenHash(payload.userId);
     const user = await User.findById(payload.userId).select('+tokenVersion');
 
-    if (!user || (payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0) || !storedToken || storedToken !== token) {
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    if (!user || (payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0) || !storedTokenHash || storedTokenHash !== tokenHash) {
       res.status(401).json({ success: false, message: 'Invalid refresh token' });
       return;
     }
