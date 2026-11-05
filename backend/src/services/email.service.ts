@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { sendEmail, verifySMTP } from '../utils/sendEmail';
+import { sendEmail, verifyEmailService } from '../utils/sendEmail';
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (char) => ({
   '&': '&amp;',
@@ -31,9 +31,13 @@ export const sendPasswordResetEmail = async (
 
 export const initializeEmailService = async (): Promise<void> => {
   try {
-    await verifySMTP();
-    console.info('SMTP ready');
+    await verifyEmailService();
+    if (config.email.resendApiKey) {
+      console.info('Resend email service ready');
+    } else if (config.email.user && config.email.pass) {
+      console.info('SMTP ready');
+    }
   } catch (error) {
-    console.error('SMTP verification failed:', error);
+    console.error('Email service verification failed:', error);
   }
 };

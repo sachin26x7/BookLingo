@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, LayoutDashboard, Library, BookMarked,
   BookOpenCheck, User, LogOut, Menu, X,
@@ -24,7 +24,9 @@ const THEME_OPTIONS: { key: 'light' | 'sepia' | 'dark'; label: string; dot: stri
 const AppLayout: React.FC = () => {
   const { user, logout, updateUser } = useAuthStore();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isDashboard = pathname === '/dashboard';
 
   const handleLogout = async () => {
     try { await authService.logout(); } catch {}
@@ -207,7 +209,10 @@ const AppLayout: React.FC = () => {
   );
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
+    <div
+      className={isDashboard ? 'dashboard-layout' : undefined}
+      style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}
+    >
 
       {/* Mobile top bar */}
       <header

@@ -17,7 +17,8 @@ serves the built frontend so the app and API share one Railway domain.
    access is needed. When using the included
    single-domain frontend, no `VITE_API_URL` is required; the frontend calls
    `/api` on the same host.
-4. Configure email on the backend service. For Render, use Resend's HTTP API:
+4. Configure email on the backend service. On Render, use Resend's HTTP API
+   (SMTP connections may time out because outbound SMTP is restricted):
    set `RESEND_API_KEY` and `RESEND_FROM` (for example,
    `BookLingo <verify@your-verified-domain.com>`). Verify the sender domain
    with Resend and publish its required DNS records before testing delivery.
@@ -55,9 +56,9 @@ production. Browser privacy settings may still block cross-site cookies;
 using a custom frontend and API domain under the same parent domain is more
 reliable.
 
-To enable password-reset emails on Render, set the SMTP variables above in the
-backend service's Environment settings, then redeploy. Account registration and
-sign-in do not require email verification.
+To enable password-reset emails on Render, set `RESEND_API_KEY` and
+`RESEND_FROM` in the backend service's Environment settings, then redeploy.
+Account registration and sign-in do not require email verification.
 
 ## Local development
 

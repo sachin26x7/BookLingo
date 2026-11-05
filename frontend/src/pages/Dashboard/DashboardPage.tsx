@@ -132,7 +132,7 @@ const DashboardPage: React.FC = () => {
             label="Total books"
             value={readingStats.totalBooks ?? 0}
             sub={`${readingStats.activeBooks ?? 0} in progress`}
-            color="var(--text-primary)"
+            color="var(--accent)"
           />
           <StatItem
             icon={Clock3}
@@ -172,8 +172,8 @@ const DashboardPage: React.FC = () => {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {continueReading.slice(0, 5).map((item, idx) => (
-                <BookProgressRow key={item._id} item={item} index={idx} />
+              {continueReading.slice(0, 5).map((item) => (
+                <BookProgressRow key={item._id} item={item} />
               ))}
             </div>
           )}
@@ -186,9 +186,8 @@ const DashboardPage: React.FC = () => {
 };
 
 /* ─── Individual book progress row ─────────────── */
-const BookProgressRow: React.FC<{ item: any; index: number }> = ({ item, index }) => {
-  const colors = ['#7a5535', '#5c7352', '#5b7fa6', '#a06b40', '#7060a0'];
-  const color  = colors[index % colors.length];
+const BookProgressRow: React.FC<{ item: any }> = ({ item }) => {
+  const color = 'var(--accent)';
 
   return (
     <div
@@ -196,8 +195,8 @@ const BookProgressRow: React.FC<{ item: any; index: number }> = ({ item, index }
     >
       <div className="dashboard-book-row-inner">
         {/* Book icon */}
-        <div className="dashboard-book-cover" style={{ color, background: `${color}18`, borderColor: `${color}28` }}>
-          <BookOpen size={18} color={color} />
+        <div className="dashboard-book-cover">
+          <BookOpen size={18} />
         </div>
 
         {/* Info */}
@@ -221,7 +220,7 @@ const BookProgressRow: React.FC<{ item: any; index: number }> = ({ item, index }
           className="btn btn-ghost btn-icon"
           title="Continue reading"
           aria-label="Continue reading"
-          style={{ background: 'var(--cream)', color, border: `1px solid ${color}28`, flexShrink: 0 }}
+          style={{ background: 'var(--cream)', color, border: '1px solid var(--border)', flexShrink: 0 }}
         >
           <Play size={13} fill={color} />
         </Link>
