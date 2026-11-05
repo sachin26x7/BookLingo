@@ -31,7 +31,7 @@ const AppLayout: React.FC = () => {
   const handleLogout = async () => {
     try { await authService.logout(); } catch {}
     logout();
-    navigate('/login');
+    navigate('/');
     toast.success('See you next time!');
   };
 
