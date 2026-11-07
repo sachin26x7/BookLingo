@@ -20,7 +20,7 @@ export const booksService = {
   getOne: (id: string) =>
     api.get<{ success: boolean; data: { book: Book; progress: ReadingProgress | null } }>(`/books/${id}`),
 
-  getFileUrl: (id: string) => `/api/books/${id}/file`,
+  getFileUrl: (id: string) => api.getUri({ url: `/books/${id}/file` }),
 
   updateMetadata: (id: string, data: { title?: string; author?: string; totalPages?: number }) =>
     api.put(`/books/${id}`, data),
