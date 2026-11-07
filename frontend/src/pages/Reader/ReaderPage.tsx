@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
-import axios from 'axios';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import {
@@ -49,9 +48,6 @@ const ReaderPage: React.FC = () => {
   const [book, setBook]           = useState<Book | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [numPages, setNumPages]   = useState(0);
-  const [pdfLoadError, setPdfLoadError] = useState(false);
-  const [isRestoringPdf, setIsRestoringPdf] = useState(false);
-  const [pdfReloadKey, setPdfReloadKey] = useState(0);
   const [inputPage, setInputPage] = useState('1');
   const [focusMode, setFocusMode] = useState(false);
   const [theme, setTheme]         = useState<'light' | 'sepia' | 'dark'>(user?.theme ?? 'light');
@@ -63,18 +59,30 @@ const ReaderPage: React.FC = () => {
 
   const pageRef        = useRef<HTMLDivElement>(null);
   const progressTimer  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const progressRequest = useRef<Promise<void>>(Promise.resolve());
   const fontPanelRef   = useRef<HTMLDivElement>(null);
-  const restoreInputRef = useRef<HTMLInputElement>(null);
-
   const pdfUrl = bookId ? booksService.getFileUrl(bookId) : '';
+  const pdfOptions = useMemo(() => accessToken ? {
+    httpHeaders: { Authorization: `Bearer ${accessToken}` },
+  } : undefined, [accessToken]);
   const tc     = THEME_OPTIONS.find((t) => t.key === theme) ?? THEME_OPTIONS[0];
 
   /* ── Load book ── */
   useEffect(() => {
     if (!bookId) return;
+    let active = true;
+    setIsLoading(true);
+    setBook(null);
+    setNumPages(0);
+    setCurrentBook(null);
+    setCurrentPage(1);
+    setTotalPages(0);
+    setBookmarks([]);
+
     (async () => {
       try {
         const { data } = await booksService.getOne(bookId);
+        if (!active) return;
         setBook(data.data.book);
         setCurrentBook(data.data.book);
         if (data.data.progress?.currentPage) {
@@ -82,14 +90,18 @@ const ReaderPage: React.FC = () => {
           setInputPage(String(data.data.progress.currentPage));
         }
         const bkRes = await readerService.getBookmarks(bookId);
+        if (!active) return;
         setBookmarks(bkRes.data.data || []);
       } catch {
-        toast.error('Failed to load book');
-        navigate('/library');
+        if (active) {
+          toast.error('Failed to load book');
+          navigate('/library');
+        }
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     })();
+    return () => { active = false; };
   }, [bookId]);
 
   /* ── Apply theme ── */
@@ -102,16 +114,47 @@ const ReaderPage: React.FC = () => {
 
   /* ── Save progress ── */
   useEffect(() => {
-    if (!bookId || !numPages) return;
+    if (!bookId || book?._id !== bookId || !numPages) return;
     clearTimeout(progressTimer.current);
-    progressTimer.current = setTimeout(() => {
+    const saveProgress = () => {
       const minutes = Math.round((Date.now() - sessionStart) / 60000);
-      progressService
-        .updateProgress(bookId, { currentPage, totalPages: numPages, timeSpentMinutes: minutes > 0 ? 1 : 0 })
-        .catch(() => {});
-    }, 2000);
+      progressRequest.current = progressRequest.current
+        .catch(() => undefined)
+        .then(async () => {
+          await progressService.updateProgress(bookId, {
+            currentPage,
+            totalPages: numPages,
+            timeSpentMinutes: minutes > 0 ? 1 : 0,
+          });
+        })
+        .catch(() => {
+          toast.error('Could not save reading progress');
+        });
+    };
+    progressTimer.current = setTimeout(saveProgress, 500);
     setInputPage(String(currentPage));
-  }, [currentPage, numPages, bookId]);
+
+    const saveOnExit = () => {
+      clearTimeout(progressTimer.current);
+      saveProgress();
+    };
+    window.addEventListener('pagehide', saveOnExit);
+    return () => {
+      clearTimeout(progressTimer.current);
+      window.removeEventListener('pagehide', saveOnExit);
+    };
+  }, [currentPage, numPages, bookId, book?._id]);
+
+  useEffect(() => () => {
+    const reader = useReaderStore.getState();
+    if (!bookId || reader.currentBook?._id !== bookId || !reader.totalPages) return;
+    const minutes = Math.round((Date.now() - sessionStart) / 60000);
+    progressService.updateProgress(bookId, {
+      currentPage: reader.currentPage,
+      totalPages: reader.totalPages,
+      timeSpentMinutes: minutes > 0 ? 1 : 0,
+    }).catch(() => toast.error('Could not save reading progress'));
+  }, [bookId, sessionStart]);
 
   /* ── Update total pages ── */
   useEffect(() => {
@@ -526,75 +569,24 @@ const ReaderPage: React.FC = () => {
           handleTextSelection(event.nativeEvent);
         }}
       >
-        <input
-          ref={restoreInputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          hidden
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (!file || !bookId) return;
-
-            setIsRestoringPdf(true);
-            try {
-              await booksService.restoreFile(bookId, file);
-              setPdfLoadError(false);
-              setPdfReloadKey((key) => key + 1);
-              toast.success('PDF restored');
-            } catch (error) {
-              const message = axios.isAxiosError(error) ? error.response?.data?.message : undefined;
-              toast.error(
-                typeof message === 'string' ? message : 'Could not restore PDF. Select the original file.'
-              );
-            } finally {
-              setIsRestoringPdf(false);
-            }
-          }}
-        />
         <div style={{
           width: '100%',
           maxWidth: settings.zoom * 760,
           userSelect: 'text',
         }}>
           <Document
-            key={pdfReloadKey}
             file={pdfUrl}
             suspense={false}
-            options={accessToken ? {
-              httpHeaders: { Authorization: `Bearer ${accessToken}` },
-            } : undefined}
-            onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+            options={pdfOptions}
+            onLoadSuccess={({ numPages: n }) => {
+              if (currentPage > n) setCurrentPage(n);
+              setNumPages(n);
+            }}
             onLoadError={(err) => {
               console.error(err);
-              setPdfLoadError(true);
               toast.error('PDF could not be loaded');
             }}
-            error={
-              <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-primary)' }}>
-                <p>{pdfLoadError ? 'This PDF is missing or could not be loaded.' : 'Failed to load PDF.'}</p>
-                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                  Choose the original file to restore this book without losing your reading progress.
-                </p>
-                <button
-                  type="button"
-                  disabled={isRestoringPdf}
-                  onClick={() => restoreInputRef.current?.click()}
-                  style={{
-                    marginTop: 8,
-                    padding: '10px 16px',
-                    border: 0,
-                    borderRadius: 8,
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    cursor: isRestoringPdf ? 'wait' : 'pointer',
-                    opacity: isRestoringPdf ? 0.7 : 1,
-                  }}
-                >
-                  {isRestoringPdf ? 'Restoring…' : 'Restore PDF'}
-                </button>
-              </div>
-            }
+            error={<p style={{ textAlign: 'center', padding: 32 }}>This PDF could not be loaded.</p>}
             loading={
               <div style={{
                 display: 'flex', flexDirection: 'column',

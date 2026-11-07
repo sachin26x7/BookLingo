@@ -29,19 +29,17 @@ serves the built frontend so the app and API share one Railway domain.
    TLS, or port 587 with STARTTLS. Legacy `EMAIL_HOST`, `EMAIL_PORT`,
    `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_SECURE`, and `EMAIL_FROM` names remain
    supported. Do not commit SMTP credentials.
-5. Add a Railway volume mounted at `/app/backend/uploads` and set
-   `UPLOAD_DIR=/app/backend/uploads` so uploaded PDFs survive redeploys.
-   Relative `UPLOAD_DIR` values resolve from the backend directory.
-   If a book's PDF is missing, restore it from the reader with the original
-   file; the book's reading progress is preserved.
-   Configure any optional AI integration with `GROQ_API_KEY`.
-6. Generate a public domain for the service, then redeploy after changing
-   variables or volume settings.
+5. Configure any optional AI integration with `GROQ_API_KEY`.
+6. Generate a public domain for the service, then redeploy.
 
 Railway environment variables must be configured in its dashboard; do not
 commit secrets or copy local `.env` files into the deployment. MongoDB must be
-reachable from the backend service. Refresh-token hashes are stored on each
-MongoDB user document, so Redis is not required.
+reachable from the backend service. PDF files are stored in MongoDB GridFS,
+so no application disk volume is needed; include the database's file storage
+in capacity planning and backups. Existing PDFs still present in the old
+`UPLOAD_DIR` are migrated to GridFS when opened. Files already lost from an
+ephemeral deployment cannot be recovered from their book records. Refresh-token
+hashes are stored on each MongoDB user document, so Redis is not required.
 
 ### Separate Vercel frontend and Render API
 

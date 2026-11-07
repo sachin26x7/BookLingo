@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  uploadBook, getBooks, getBook, serveBookFile, restoreBookFile,
+  uploadBook, getBooks, getBook, serveBookFile,
   deleteBook, updateBookMetadata,
 } from '../controllers/books.controller';
 import { authenticate } from '../middleware/auth.middleware';
@@ -24,14 +24,6 @@ router.post(
 router.get('/', query('page').optional().isInt({ min: 1, max: 10000 }), query('limit').optional().isInt({ min: 1, max: 100 }), handleValidationErrors, getBooks);
 router.get('/:id', param('id').isMongoId(), handleValidationErrors, getBook);
 router.get('/:id/file', param('id').isMongoId(), handleValidationErrors, serveBookFile);
-router.post(
-  '/:id/file',
-  param('id').isMongoId(),
-  handleValidationErrors,
-  uploadPDF.single('file'),
-  validatePDFSignature,
-  restoreBookFile
-);
 router.put(
   '/:id',
   param('id').isMongoId(),

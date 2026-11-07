@@ -1,13 +1,12 @@
 import multer from 'multer';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { NextFunction, Request, Response } from 'express';
 import { validationResult } from 'express-validator';
-import { config } from '../config';
 
-// Ensure upload directory exists
-const uploadDir = path.resolve(config.uploadDir);
+const uploadDir = path.join(os.tmpdir(), 'booklingo-uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

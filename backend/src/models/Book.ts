@@ -5,6 +5,7 @@ export interface IBook extends Document {
   title: string;
   author?: string;
   filename: string;
+  fileId?: mongoose.Types.ObjectId;
   originalName: string;
   fileSize: number;
   fileHash?: string;
@@ -21,6 +22,7 @@ const BookSchema = new Schema<IBook>(
     title: { type: String, required: true, trim: true },
     author: { type: String, trim: true },
     filename: { type: String, required: true },
+    fileId: { type: Schema.Types.ObjectId },
     originalName: { type: String, required: true },
     fileSize: { type: Number, required: true },
     fileHash: { type: String },

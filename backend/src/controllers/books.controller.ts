@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { Readable } from 'stream';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -8,6 +9,7 @@ import { Bookmark } from '../models/Bookmark';
 import { Annotation } from '../models/Annotation';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { config } from '../config';
+import { deletePdf, getStoredPdf, openStoredPdf, storePdf } from '../services/pdf-storage.service';
 
 const getFileHash = (filePath: string): Promise<string> => new Promise((resolve, reject) => {
   const hash = crypto.createHash('sha256');
@@ -23,56 +25,68 @@ export const uploadBook = async (req: AuthRequest, res: Response): Promise<void>
     return;
   }
 
-  const { title, author } = req.body;
-  const userId = req.user!.userId;
-  const originalName = req.file.originalname
-    .split(/[\\/]/)
-    .pop()
-    ?.replace(/[\x00-\x1f\x7f]/g, '')
-    .slice(0, 255) || 'book.pdf';
-  const fileHash = await getFileHash(req.file.path);
-  const possibleDuplicates = await Book.find({
-    userId,
-    isDeleted: false,
-    fileSize: req.file.size,
-  }).select('_id filename fileHash').lean();
+  try {
+    const { title, author } = req.body;
+    const userId = req.user!.userId;
+    const originalName = req.file.originalname
+      .split(/[\\/]/)
+      .pop()
+      ?.replace(/[\x00-\x1f\x7f]/g, '')
+      .slice(0, 255) || 'book.pdf';
+    const fileHash = await getFileHash(req.file.path);
+    const possibleDuplicates = await Book.find({
+      userId,
+      isDeleted: false,
+      fileSize: req.file.size,
+    }).select('_id filename fileHash').lean();
 
-  for (const existingBook of possibleDuplicates) {
-    let existingHash = existingBook.fileHash;
-    if (!existingHash) {
-      const existingPath = path.resolve(config.uploadDir, existingBook.filename);
-      if (!fs.existsSync(existingPath)) continue;
-      existingHash = await getFileHash(existingPath);
-      await Book.updateOne({ _id: existingBook._id, userId }, { $set: { fileHash: existingHash } });
+    for (const existingBook of possibleDuplicates) {
+      let existingHash = existingBook.fileHash;
+      if (!existingHash) {
+        const existingPath = path.resolve(config.uploadDir, existingBook.filename);
+        if (!fs.existsSync(existingPath)) continue;
+        existingHash = await getFileHash(existingPath);
+        await Book.updateOne({ _id: existingBook._id, userId }, { $set: { fileHash: existingHash } });
+      }
+
+      if (existingHash === fileHash) {
+        res.status(409).json({
+          success: false,
+          message: 'This PDF is already uploaded to your library.',
+        });
+        return;
+      }
     }
 
-    if (existingHash === fileHash) {
-      await fs.promises.unlink(req.file.path).catch(() => undefined);
-      res.status(409).json({
-        success: false,
-        message: 'This PDF is already uploaded to your library.',
+    const fileId = await storePdf(req.file.path, req.file.filename, userId);
+    try {
+      const book = await Book.create({
+        userId,
+        title: title || path.basename(originalName, path.extname(originalName)).slice(0, 200) || 'Untitled book',
+        author: author || '',
+        filename: req.file.filename,
+        fileId,
+        originalName,
+        fileSize: req.file.size,
+        fileHash,
+        totalPages: 0, // Will be updated when first opened
+        uploadedAt: new Date(),
       });
-      return;
+
+      res.status(201).json({
+        success: true,
+        data: book,
+        message: 'Book uploaded successfully',
+      });
+    } catch (error) {
+      await deletePdf(fileId);
+      throw error;
     }
+  } finally {
+    await fs.promises.unlink(req.file.path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') console.warn('Could not remove temporary PDF upload:', error.message);
+    });
   }
-
-  const book = await Book.create({
-    userId,
-    title: title || path.basename(originalName, path.extname(originalName)).slice(0, 200) || 'Untitled book',
-    author: author || '',
-    filename: req.file.filename,
-    originalName,
-    fileSize: req.file.size,
-    fileHash,
-    totalPages: 0, // Will be updated when first opened
-    uploadedAt: new Date(),
-  });
-
-  res.status(201).json({
-    success: true,
-    data: book,
-    message: 'Book uploaded successfully',
-  });
 };
 
 export const getBooks = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -149,70 +163,51 @@ export const serveBookFile = async (req: AuthRequest, res: Response): Promise<vo
     return;
   }
 
-  const filePath = path.resolve(config.uploadDir, book.filename);
+  let fileSize = book.fileSize;
+  let fileStream: Readable;
+  if (book.fileId) {
+    const storedFile = await getStoredPdf(book.fileId);
+    if (!storedFile) {
+      res.status(404).json({ success: false, message: 'PDF data not found in storage' });
+      return;
+    }
+    fileSize = storedFile.length;
+    fileStream = openStoredPdf(book.fileId);
+  } else {
+    const filePath = path.resolve(config.uploadDir, book.filename);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ success: false, message: 'PDF data not found in storage' });
+      return;
+    }
 
-  if (!fs.existsSync(filePath)) {
-    res.status(404).json({ success: false, message: 'File not found on disk' });
-    return;
+    const fileId = await storePdf(filePath, book.filename, req.user!.userId);
+    try {
+      book.fileHash ??= await getFileHash(filePath);
+      book.fileId = fileId;
+      await book.save();
+    } catch (error) {
+      await deletePdf(fileId);
+      throw error;
+    }
+
+    await fs.promises.unlink(filePath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') console.warn('Could not remove migrated PDF:', error.message);
+    });
+    const storedFile = await getStoredPdf(fileId);
+    if (!storedFile) throw new Error('Migrated PDF was not found in GridFS');
+    fileSize = storedFile.length;
+    fileStream = openStoredPdf(fileId);
   }
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'inline; filename="book.pdf"');
   res.setHeader('Cache-Control', 'private, no-store');
-
-  const stat = fs.statSync(filePath);
-  res.setHeader('Content-Length', stat.size);
-
-  const stream = fs.createReadStream(filePath);
-  stream.pipe(res);
-};
-
-export const restoreBookFile = async (req: AuthRequest, res: Response): Promise<void> => {
-  if (!req.file) {
-    res.status(400).json({ success: false, message: 'No file uploaded' });
-    return;
-  }
-
-  let keepUploadedFile = false;
-  try {
-    const book = await Book.findOne({
-      _id: req.params.id,
-      userId: req.user!.userId,
-      isDeleted: false,
-    });
-
-    if (!book) {
-      res.status(404).json({ success: false, message: 'Book not found' });
-      return;
-    }
-
-    if (fs.existsSync(path.resolve(config.uploadDir, book.filename))) {
-      res.status(409).json({ success: false, message: 'This PDF is already available' });
-      return;
-    }
-
-    const fileHash = await getFileHash(req.file.path);
-    if (req.file.size !== book.fileSize || (book.fileHash && fileHash !== book.fileHash)) {
-      res.status(400).json({
-        success: false,
-        message: 'Select the original PDF for this book',
-      });
-      return;
-    }
-
-    book.filename = req.file.filename;
-    book.fileHash = fileHash;
-    await book.save();
-    keepUploadedFile = true;
-
-    res.json({ success: true, message: 'PDF restored successfully' });
-  } finally {
-    if (!keepUploadedFile) {
-      await fs.promises.unlink(req.file.path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
-      });
-    }
-  }
+  res.setHeader('Content-Length', fileSize);
+  fileStream.once('error', (error) => {
+    if (res.headersSent) res.destroy(error);
+    else res.status(500).end();
+  });
+  fileStream.pipe(res);
 };
 
 export const updateBookMetadata = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -234,7 +229,7 @@ export const updateBookMetadata = async (req: AuthRequest, res: Response): Promi
 
 export const deleteBook = async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.userId;
-  const book = await Book.findOne({ _id: req.params.id, userId });
+  const book = await Book.findOne({ _id: req.params.id, userId, isDeleted: false });
 
   if (!book) {
     res.status(404).json({ success: false, message: 'Book not found' });
@@ -242,6 +237,14 @@ export const deleteBook = async (req: AuthRequest, res: Response): Promise<void>
   }
 
   const bookId = book._id;
+  if (book.fileId) await deletePdf(book.fileId);
+  const filePath = path.resolve(config.uploadDir, book.filename);
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
   await Book.updateOne({ _id: bookId, userId }, { $set: { isDeleted: true } });
   await Promise.all([
     ReadingProgress.deleteMany({ userId, bookId }),
@@ -250,12 +253,6 @@ export const deleteBook = async (req: AuthRequest, res: Response): Promise<void>
   ]);
 
   await Book.deleteOne({ _id: bookId, userId });
-  const filePath = path.resolve(config.uploadDir, book.filename);
-  try {
-    await fs.promises.unlink(filePath);
-  } catch (error: any) {
-    if (error.code !== 'ENOENT') console.warn('Could not remove uploaded PDF:', error.message);
-  }
 
   res.json({
     success: true,
