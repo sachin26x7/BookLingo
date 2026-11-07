@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
+import axios from 'axios';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import {
@@ -48,6 +49,9 @@ const ReaderPage: React.FC = () => {
   const [book, setBook]           = useState<Book | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [numPages, setNumPages]   = useState(0);
+  const [pdfLoadError, setPdfLoadError] = useState(false);
+  const [isRestoringPdf, setIsRestoringPdf] = useState(false);
+  const [pdfReloadKey, setPdfReloadKey] = useState(0);
   const [inputPage, setInputPage] = useState('1');
   const [focusMode, setFocusMode] = useState(false);
   const [theme, setTheme]         = useState<'light' | 'sepia' | 'dark'>(user?.theme ?? 'light');
@@ -60,6 +64,7 @@ const ReaderPage: React.FC = () => {
   const pageRef        = useRef<HTMLDivElement>(null);
   const progressTimer  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fontPanelRef   = useRef<HTMLDivElement>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   const pdfUrl = bookId ? booksService.getFileUrl(bookId) : '';
   const tc     = THEME_OPTIONS.find((t) => t.key === theme) ?? THEME_OPTIONS[0];
@@ -521,21 +526,75 @@ const ReaderPage: React.FC = () => {
           handleTextSelection(event.nativeEvent);
         }}
       >
+        <input
+          ref={restoreInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file || !bookId) return;
+
+            setIsRestoringPdf(true);
+            try {
+              await booksService.restoreFile(bookId, file);
+              setPdfLoadError(false);
+              setPdfReloadKey((key) => key + 1);
+              toast.success('PDF restored');
+            } catch (error) {
+              const message = axios.isAxiosError(error) ? error.response?.data?.message : undefined;
+              toast.error(
+                typeof message === 'string' ? message : 'Could not restore PDF. Select the original file.'
+              );
+            } finally {
+              setIsRestoringPdf(false);
+            }
+          }}
+        />
         <div style={{
           width: '100%',
           maxWidth: settings.zoom * 760,
           userSelect: 'text',
         }}>
           <Document
+            key={pdfReloadKey}
             file={pdfUrl}
+            suspense={false}
             options={accessToken ? {
               httpHeaders: { Authorization: `Bearer ${accessToken}` },
             } : undefined}
             onLoadSuccess={({ numPages: n }) => setNumPages(n)}
             onLoadError={(err) => {
               console.error(err);
-              toast.error('Failed to load PDF');
+              setPdfLoadError(true);
+              toast.error('PDF could not be loaded');
             }}
+            error={
+              <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-primary)' }}>
+                <p>{pdfLoadError ? 'This PDF is missing or could not be loaded.' : 'Failed to load PDF.'}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                  Choose the original file to restore this book without losing your reading progress.
+                </p>
+                <button
+                  type="button"
+                  disabled={isRestoringPdf}
+                  onClick={() => restoreInputRef.current?.click()}
+                  style={{
+                    marginTop: 8,
+                    padding: '10px 16px',
+                    border: 0,
+                    borderRadius: 8,
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    cursor: isRestoringPdf ? 'wait' : 'pointer',
+                    opacity: isRestoringPdf ? 0.7 : 1,
+                  }}
+                >
+                  {isRestoringPdf ? 'Restoring…' : 'Restore PDF'}
+                </button>
+              </div>
+            }
             loading={
               <div style={{
                 display: 'flex', flexDirection: 'column',

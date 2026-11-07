@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
+import path from 'path';
 dotenv.config();
+
+const backendRoot = path.resolve(__dirname, '../..');
 
 const loadJwtSecret = (name: string): string => {
   const value = process.env[name];
@@ -45,5 +48,5 @@ export const config = {
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean),
-  uploadDir: process.env.UPLOAD_DIR || 'uploads',
+  uploadDir: path.resolve(backendRoot, process.env.UPLOAD_DIR || 'uploads'),
 };

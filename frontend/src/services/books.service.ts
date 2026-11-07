@@ -22,6 +22,14 @@ export const booksService = {
 
   getFileUrl: (id: string) => `/api/books/${id}/file`,
 
+  restoreFile: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/books/${id}/file`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   updateMetadata: (id: string, data: { title?: string; author?: string; totalPages?: number }) =>
     api.put(`/books/${id}`, data),
 

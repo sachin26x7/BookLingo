@@ -167,6 +167,54 @@ export const serveBookFile = async (req: AuthRequest, res: Response): Promise<vo
   stream.pipe(res);
 };
 
+export const restoreBookFile = async (req: AuthRequest, res: Response): Promise<void> => {
+  if (!req.file) {
+    res.status(400).json({ success: false, message: 'No file uploaded' });
+    return;
+  }
+
+  let keepUploadedFile = false;
+  try {
+    const book = await Book.findOne({
+      _id: req.params.id,
+      userId: req.user!.userId,
+      isDeleted: false,
+    });
+
+    if (!book) {
+      res.status(404).json({ success: false, message: 'Book not found' });
+      return;
+    }
+
+    if (fs.existsSync(path.resolve(config.uploadDir, book.filename))) {
+      res.status(409).json({ success: false, message: 'This PDF is already available' });
+      return;
+    }
+
+    const fileHash = await getFileHash(req.file.path);
+    if (req.file.size !== book.fileSize || (book.fileHash && fileHash !== book.fileHash)) {
+      res.status(400).json({
+        success: false,
+        message: 'Select the original PDF for this book',
+      });
+      return;
+    }
+
+    book.filename = req.file.filename;
+    book.fileHash = fileHash;
+    await book.save();
+    keepUploadedFile = true;
+
+    res.json({ success: true, message: 'PDF restored successfully' });
+  } finally {
+    if (!keepUploadedFile) {
+      await fs.promises.unlink(req.file.path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    }
+  }
+};
+
 export const updateBookMetadata = async (req: AuthRequest, res: Response): Promise<void> => {
   const { title, author, totalPages } = req.body;
 

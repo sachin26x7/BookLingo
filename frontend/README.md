@@ -31,6 +31,9 @@ serves the built frontend so the app and API share one Railway domain.
    supported. Do not commit SMTP credentials.
 5. Add a Railway volume mounted at `/app/backend/uploads` and set
    `UPLOAD_DIR=/app/backend/uploads` so uploaded PDFs survive redeploys.
+   Relative `UPLOAD_DIR` values resolve from the backend directory.
+   If a book's PDF is missing, restore it from the reader with the original
+   file; the book's reading progress is preserved.
    Configure any optional AI integration with `GROQ_API_KEY`.
 6. Generate a public domain for the service, then redeploy after changing
    variables or volume settings.
