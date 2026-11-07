@@ -35,6 +35,7 @@ app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 const allowedOrigins = new Set([
   ...config.frontendUrls,
   'https://book-lingo-4tp7-git-main-sachin3103x5-2655.vercel.app',
+  'https://book-lingo-4tp7.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ]);
