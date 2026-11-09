@@ -19,13 +19,14 @@ export const explainWordValidators = [
 ];
 
 const getContextRequest = (req: AuthRequest) => {
-  const { word, sentence, paragraph, previousSentence, nextSentence, userLevel } = req.body;
+  const { word, sentence, paragraph, previousSentence, nextSentence, targetLanguage, userLevel } = req.body;
   return {
     word: word.trim(),
     sentence: sentence.trim(),
     paragraph: paragraph?.trim(),
     previousSentence: previousSentence?.trim(),
     nextSentence: nextSentence?.trim(),
+    targetLanguage: targetLanguage || 'Hindi',
     userLevel: userLevel || 'intermediate',
   };
 };

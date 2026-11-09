@@ -326,6 +326,7 @@ const ReaderPage: React.FC = () => {
           paragraph: selectedWord.paragraph,
           previousSentence: selectedWord.previousSentence,
           nextSentence: selectedWord.nextSentence,
+          targetLanguage: meaningLanguage,
           userLevel: user?.proficiencyLevel || 'intermediate',
         });
         if (active) {
@@ -348,7 +349,7 @@ const ReaderPage: React.FC = () => {
       }
     })();
     return () => { active = false; };
-  }, [selectedWord, popupVisible, user?.proficiencyLevel, setExplanation, setIsExplaining]);
+  }, [selectedWord, popupVisible, meaningLanguage, user?.proficiencyLevel, setExplanation, setIsExplaining]);
 
   useEffect(() => {
     if (!selectedWord || !popupVisible) return;

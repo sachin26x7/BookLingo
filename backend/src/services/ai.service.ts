@@ -26,7 +26,7 @@ export interface WordExplanation extends ContextualExplanation {
 }
 
 const CONTEXT_SYSTEM_INSTRUCTION = `You are a vocabulary assistant in a book reader.
-Use the selected word, its exact sentence, and any supplied nearby text to explain the meaning the word has in that passage. Make contextualMeaning a clear, detailed explanation in natural English, not a dictionary list. Keep simpleEnglish easy to understand. Identify the part of speech and pronunciation for the word as used in the sentence. Do not translate any field.
+Use the selected word, its exact sentence, and any supplied nearby text to explain the meaning the word has in that passage. Make contextualMeaning a clear, detailed explanation in the requested target language, not a dictionary list. Preserve the passage's meaning and intent, using natural language rather than a literal word-for-word translation. Keep simpleEnglish easy to understand in English. Identify the part of speech and pronunciation for the word as used in the sentence. Do not translate any other field.
 Return only valid JSON with exactly the requested keys.`;
 
 const TRANSLATION_SYSTEM_INSTRUCTION = `You are a dictionary translator. Translate only the supplied word into the requested language.
@@ -40,12 +40,13 @@ Sentence: "${req.sentence}"
 ${req.paragraph ? `Surrounding paragraph: "${req.paragraph.substring(0, 500)}"` : ''}
 ${req.previousSentence ? `Previous sentence: "${req.previousSentence}"` : ''}
 ${req.nextSentence ? `Next sentence: "${req.nextSentence}"` : ''}
+Write contextualMeaning in ${req.targetLanguage || 'Hindi'}.
 Reader's English level: ${req.userLevel || 'intermediate'}
 
 Return ONLY this JSON structure:
 {
   "word": "${req.word}",
-  "contextualMeaning": "a detailed natural-English explanation of the meaning in this passage",
+  "contextualMeaning": "a detailed, natural ${req.targetLanguage || 'Hindi'} explanation of the meaning in this passage",
   "simpleEnglish": "a simpler English explanation",
   "pronunciation": "phonetic pronunciation",
   "partOfSpeech": "part of speech in this usage",

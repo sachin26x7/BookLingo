@@ -37,6 +37,7 @@ export const aiService = {
     paragraph?: string;
     previousSentence?: string;
     nextSentence?: string;
+    targetLanguage: string;
     userLevel?: string;
   }) => api.post<{ success: boolean; data: AIWordExplanation }>('/ai/explain-context', data)
     .then((response) => mapExplanation(response.data.data)),
@@ -54,7 +55,7 @@ export const aiService = {
     userLevel?: string;
   }) => {
     const [context, translation] = await Promise.all([
-      aiService.explainContext(data),
+      aiService.explainContext({ ...data, targetLanguage: data.targetLanguage || 'Hindi' }),
       aiService.translateWord({
         word: data.word,
         targetLanguage: data.targetLanguage || 'Hindi',

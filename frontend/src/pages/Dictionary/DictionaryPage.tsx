@@ -29,26 +29,33 @@ const DictionaryPage: React.FC = () => {
   const [isLoading, setIsLoading]   = useState(false);
   const [isSaving, setIsSaving]     = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [isContextLoading, setIsContextLoading] = useState(false);
+  const contextRequestRef = React.useRef(0);
   const resultWord = result?.word;
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim()) return;
+    const requestId = ++contextRequestRef.current;
+    const language = targetLang;
     setIsLoading(true);
+    setIsContextLoading(false);
     setIsTranslating(false);
     setResult(null);
     try {
       const explanation = await aiService.explainContext({
         word: word.trim(),
         sentence: sentence.trim() || word.trim(),
+        targetLanguage: language,
         userLevel: user?.proficiencyLevel || 'intermediate',
       });
+      if (requestId !== contextRequestRef.current) return;
       setIsTranslating(true);
       setResult(explanation);
     } catch {
-      toast.error('Could not fetch explanation');
+      if (requestId === contextRequestRef.current) toast.error('Could not fetch explanation');
     } finally {
-      setIsLoading(false);
+      if (requestId === contextRequestRef.current) setIsLoading(false);
     }
   };
 
@@ -69,8 +76,31 @@ const DictionaryPage: React.FC = () => {
   }, [resultWord, targetLang]);
 
   const handleTargetLanguageChange = (language: string) => {
-    if (resultWord) setIsTranslating(true);
     setTargetLang(language);
+    if (!result) return;
+
+    const requestId = ++contextRequestRef.current;
+    const selectedWord = result.word;
+    setIsContextLoading(true);
+    setIsTranslating(true);
+    setResult((current) => current ? { ...current, translation: '' } : current);
+
+    void aiService.explainContext({
+      word: selectedWord,
+      sentence: sentence.trim() || selectedWord,
+      targetLanguage: language,
+      userLevel: user?.proficiencyLevel || 'intermediate',
+    }).then((context) => {
+      if (requestId === contextRequestRef.current) {
+        setResult((current) => current?.word === selectedWord
+          ? { ...current, ...context, translation: current.translation }
+          : current);
+      }
+    }).catch(() => {
+      if (requestId === contextRequestRef.current) toast.error(`Could not explain the word in ${language}`);
+    }).finally(() => {
+      if (requestId === contextRequestRef.current) setIsContextLoading(false);
+    });
   };
 
   const speak = () => {
@@ -292,7 +322,7 @@ const DictionaryPage: React.FC = () => {
             }}>
               <SectionLabel>{sentence ? 'Contextual Meaning' : 'Meaning'}</SectionLabel>
               <p style={{ fontSize: 15.5, color: 'var(--text-primary)', lineHeight: 1.6, fontWeight: 500 }}>
-                {result.contextualMeaning}
+                {isContextLoading ? 'Updating meaning…' : result.contextualMeaning}
               </p>
             </div>
 
