@@ -33,6 +33,66 @@ const THEME_OPTIONS: {
   { key: 'dark',  bg: '#18140f',  text: '#ede8de', border: '#342e24', dot: '#18140f' },
 ];
 
+const getTextLayer = (node: Node) => {
+  const element = node instanceof Element ? node : node.parentElement;
+  return element?.closest('.textLayer') ?? null;
+};
+
+const isWordCharacter = (character: string) => /[\p{L}\p{N}\p{M}_'’-]/u.test(character);
+
+const getWordRangeAtPoint = (x: number, y: number, root: HTMLElement) => {
+  const pointDocument = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  let caretRange = pointDocument.caretRangeFromPoint?.(x, y) ?? null;
+
+  if (!caretRange || caretRange.startContainer.nodeType !== Node.TEXT_NODE) {
+    const position = pointDocument.caretPositionFromPoint?.(x, y);
+    if (!position || position.offsetNode.nodeType !== Node.TEXT_NODE) return null;
+    caretRange = document.createRange();
+    caretRange.setStart(position.offsetNode, position.offset);
+    caretRange.collapse(true);
+  }
+
+  const textNode = caretRange.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) return null;
+  const textLayer = getTextLayer(textNode);
+  if (!textLayer || !root.contains(textLayer)) return null;
+
+  const text = textNode.textContent ?? '';
+  let index = Math.min(caretRange.startOffset, text.length);
+  const previousCharacterStart = (offset: number) =>
+    offset > 1 && /[\uDC00-\uDFFF]/.test(text[offset - 1]) &&
+    /[\uD800-\uDBFF]/.test(text[offset - 2]) ? offset - 2 : offset - 1;
+  const characterAt = (offset: number) => {
+    const codePoint = text.codePointAt(offset);
+    return codePoint === undefined ? '' : String.fromCodePoint(codePoint);
+  };
+
+  if (!isWordCharacter(characterAt(index))) {
+    if (index === 0 || !isWordCharacter(characterAt(previousCharacterStart(index)))) return null;
+    index = previousCharacterStart(index);
+  }
+
+  let start = index;
+  while (start > 0) {
+    const previousStart = previousCharacterStart(start);
+    if (!isWordCharacter(characterAt(previousStart))) break;
+    start = previousStart;
+  }
+
+  let end = index + characterAt(index).length;
+  while (end < text.length && isWordCharacter(characterAt(end))) {
+    end += characterAt(end).length;
+  }
+
+  const wordRange = document.createRange();
+  wordRange.setStart(textNode, start);
+  wordRange.setEnd(textNode, end);
+  return wordRange;
+};
+
 const ReaderPage: React.FC = () => {
   const { bookId }    = useParams<{ bookId: string }>();
   const navigate      = useNavigate();
@@ -49,6 +109,8 @@ const ReaderPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [numPages, setNumPages]   = useState(0);
   const [inputPage, setInputPage] = useState('1');
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [originalPageWidth, setOriginalPageWidth] = useState(0);
   const [focusMode, setFocusMode] = useState(false);
   const [theme, setTheme]         = useState<'light' | 'sepia' | 'dark'>(user?.theme ?? 'light');
   const [meaningLanguage, setMeaningLanguage] = useState<SupportedLanguage>(
@@ -62,10 +124,16 @@ const ReaderPage: React.FC = () => {
   const progressRequest = useRef<Promise<void>>(Promise.resolve());
   const fontPanelRef   = useRef<HTMLDivElement>(null);
   const touchSelectionRef = useRef<{
-    anchorNode: Node | null;
-    anchorOffset: number;
-    focusNode: Node | null;
-    focusOffset: number;
+    x: number;
+    y: number;
+    startedAt: number;
+    onTextLayer: boolean;
+    selection: {
+      anchorNode: Node | null;
+      anchorOffset: number;
+      focusNode: Node | null;
+      focusOffset: number;
+    } | null;
   } | null>(null);
   const lastTouchEndRef = useRef(0);
   const pdfUrl = bookId ? booksService.getFileUrl(bookId) : '';
@@ -73,6 +141,38 @@ const ReaderPage: React.FC = () => {
     httpHeaders: { Authorization: `Bearer ${accessToken}` },
   } : undefined, [accessToken]);
   const tc     = THEME_OPTIONS.find((t) => t.key === theme) ?? THEME_OPTIONS[0];
+  const fitScale = originalPageWidth && viewportWidth
+    ? Math.min(1, viewportWidth / originalPageWidth, 760 / originalPageWidth)
+    : 1;
+  const pageScale = fitScale * settings.zoom;
+  const renderedPageWidth = originalPageWidth ? originalPageWidth * pageScale : undefined;
+
+  useEffect(() => {
+    const viewport = pageRef.current;
+    if (!viewport) return;
+
+    const updateWidth = (width: number) => setViewportWidth(Math.floor(width));
+    const updateFromViewport = () => {
+      const style = window.getComputedStyle(viewport);
+      updateWidth(
+        viewport.clientWidth -
+        Number.parseFloat(style.paddingLeft) -
+        Number.parseFloat(style.paddingRight)
+      );
+    };
+
+    updateFromViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateFromViewport);
+      return () => window.removeEventListener('resize', updateFromViewport);
+    }
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) updateWidth(entry.contentRect.width);
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   /* ── Load book ── */
   useEffect(() => {
@@ -187,11 +287,9 @@ const ReaderPage: React.FC = () => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
     const selected = sel.toString().trim();
-    if (selected.length < 2 || selected.length > 200) return;
+    if (selected.length < 1 || selected.length > 200) return;
 
     const range = sel.getRangeAt(0);
-    const getTextLayer = (node: Node) =>
-      node instanceof Element ? node.closest('.textLayer') : node.parentElement?.closest('.textLayer');
     const textLayer = getTextLayer(range.startContainer);
     if (!textLayer || textLayer !== getTextLayer(range.endContainer) || !pageRef.current?.contains(textLayer)) return;
 
@@ -568,9 +666,9 @@ const ReaderPage: React.FC = () => {
         style={{
           flex: 1,
           overflowY: 'auto',
-          overflowX: 'hidden',
+          overflowX: 'auto',
           display: 'flex',
-          justifyContent: 'center',
+          justifyContent: 'flex-start',
           alignItems: 'flex-start',
           padding: focusMode ? '52px 24px' : '32px 24px',
           background: tc.bg,
@@ -581,19 +679,53 @@ const ReaderPage: React.FC = () => {
           if (event.target instanceof Element && event.target.closest('[data-word-popup]')) return;
           handleTextSelection();
         }}
-        onTouchStart={() => {
+        onTouchStart={(event) => {
           const selection = window.getSelection();
+          const touch = event.changedTouches[0] ?? event.touches[0];
+          if (!touch) return;
           touchSelectionRef.current = selection ? {
-            anchorNode: selection.anchorNode,
-            anchorOffset: selection.anchorOffset,
-            focusNode: selection.focusNode,
-            focusOffset: selection.focusOffset,
-          } : null;
+            x: touch.clientX,
+            y: touch.clientY,
+            startedAt: Date.now(),
+            onTextLayer: event.target instanceof Element && Boolean(event.target.closest('.textLayer')),
+            selection: {
+              anchorNode: selection.anchorNode,
+              anchorOffset: selection.anchorOffset,
+              focusNode: selection.focusNode,
+              focusOffset: selection.focusOffset,
+            },
+          } : {
+            x: touch.clientX,
+            y: touch.clientY,
+            startedAt: Date.now(),
+            onTextLayer: event.target instanceof Element && Boolean(event.target.closest('.textLayer')),
+            selection: null,
+          };
         }}
         onTouchEnd={(event) => {
           if (event.target instanceof Element && event.target.closest('[data-word-popup]')) return;
           lastTouchEndRef.current = Date.now();
-          const previous = touchSelectionRef.current;
+          const touch = event.changedTouches[0];
+          const start = touchSelectionRef.current;
+
+          if (touch && start?.onTextLayer &&
+            Date.now() - start.startedAt <= 350 &&
+            Math.hypot(touch.clientX - start.x, touch.clientY - start.y) <= 12) {
+            requestAnimationFrame(() => {
+              const viewport = pageRef.current;
+              if (!viewport) return;
+              const range = getWordRangeAtPoint(touch.clientX, touch.clientY, viewport);
+              if (!range) return;
+              const selection = window.getSelection();
+              if (!selection) return;
+              selection.removeAllRanges();
+              selection.addRange(range);
+              handleTextSelection();
+            });
+            return;
+          }
+
+          const previous = start?.selection;
           requestAnimationFrame(() => {
             const selection = window.getSelection();
             if (!selection || selection.isCollapsed) return;
@@ -605,10 +737,17 @@ const ReaderPage: React.FC = () => {
             handleTextSelection();
           });
         }}
+        onContextMenu={(event) => {
+          if (event.target instanceof Element && event.target.closest('.textLayer')) {
+            event.preventDefault();
+          }
+        }}
       >
         <div style={{
-          width: '100%',
-          maxWidth: settings.zoom * 760,
+          width: renderedPageWidth ? `${renderedPageWidth}px` : '100%',
+          maxWidth: 'none',
+          flexShrink: 0,
+          margin: '0 auto',
           userSelect: 'text',
         }}>
           <Document
@@ -637,9 +776,10 @@ const ReaderPage: React.FC = () => {
           >
             <Page
               pageNumber={currentPage}
-              scale={settings.zoom}
+              scale={pageScale}
               renderTextLayer
               renderAnnotationLayer
+              onLoadSuccess={({ originalWidth }) => setOriginalPageWidth(originalWidth)}
               canvasBackground={theme === 'dark' ? '#ffffff' : tc.bg}
               className="page-fade"
             />
@@ -694,8 +834,6 @@ const ReaderPage: React.FC = () => {
         .page-fade { animation: fade-page 0.18s ease forwards; }
         .react-pdf__Page { display: flex; justify-content: center; }
         .react-pdf__Page canvas {
-          max-width: 100%;
-          height: auto !important;
           border-radius: 2px;
           box-shadow: 0 2px 24px rgba(30,20,10,0.10);
         }

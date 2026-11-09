@@ -402,7 +402,6 @@ h4, h5, h6 { font-family: 'Inter', sans-serif; font-weight: 500; }
    PDF READER LAYER
 ═══════════════════════════════════════════════ */
 .react-pdf__Page              { display: flex; justify-content: center; }
-.react-pdf__Page canvas       { max-width: 100%; height: auto !important; }
 .textLayer                    { opacity: 0.22; mix-blend-mode: multiply; }
 [data-theme="dark"] .textLayer { mix-blend-mode: screen; }
 
