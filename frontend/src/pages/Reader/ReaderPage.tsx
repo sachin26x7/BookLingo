@@ -176,7 +176,7 @@ const ReaderPage: React.FC = () => {
   }, [showFontPanel]);
 
   /* ── Word selection ── */
-  const handleTextSelection = useCallback((_event: MouseEvent) => {
+  const handleTextSelection = useCallback(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
     const selected = sel.toString().trim();
@@ -566,7 +566,11 @@ const ReaderPage: React.FC = () => {
         }}
         onMouseUp={(event) => {
           if (event.target instanceof Element && event.target.closest('[data-word-popup]')) return;
-          handleTextSelection(event.nativeEvent);
+          handleTextSelection();
+        }}
+        onTouchEnd={(event) => {
+          if (event.target instanceof Element && event.target.closest('[data-word-popup]')) return;
+          handleTextSelection();
         }}
       >
         <div style={{
