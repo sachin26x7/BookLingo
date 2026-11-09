@@ -31,7 +31,20 @@ export const vocabularyService = {
 };
 
 export const aiService = {
-  explainWord: (data: {
+  explainContext: (data: {
+    word: string;
+    sentence: string;
+    paragraph?: string;
+    previousSentence?: string;
+    nextSentence?: string;
+    userLevel?: string;
+  }) => api.post<{ success: boolean; data: AIWordExplanation }>('/ai/explain-context', data)
+    .then((response) => mapExplanation(response.data.data)),
+
+  translateWord: (data: { word: string; targetLanguage: string }) =>
+    api.post<{ success: boolean; data: { translation: string } }>('/ai/translate-word', data),
+
+  explainWord: async (data: {
     word: string;
     sentence: string;
     paragraph?: string;
@@ -39,21 +52,33 @@ export const aiService = {
     nextSentence?: string;
     targetLanguage?: string;
     userLevel?: string;
-  }) => api.post<{ success: boolean; data: AIWordExplanation }>('/ai/explain-word', data)
-    .then((response) => ({
-      ...response,
+  }) => {
+    const [context, translation] = await Promise.all([
+      aiService.explainContext(data),
+      aiService.translateWord({
+        word: data.word,
+        targetLanguage: data.targetLanguage || 'Hindi',
+      }),
+    ]);
+    return {
       data: {
-        ...response.data,
+        success: true,
         data: {
-          word: response.data.data.word,
-          contextualMeaning: response.data.data.contextualMeaning,
-          simpleExplanation: response.data.data.simpleEnglish,
-          translation: response.data.data.translation,
-          pronunciation: response.data.data.pronunciation,
-          partOfSpeech: response.data.data.partOfSpeech,
-          synonyms: response.data.data.synonyms,
-          exampleSentence: response.data.data.example,
-        } satisfies WordExplanation,
+          ...context,
+          translation: translation.data.data.translation,
+        },
       },
-    })),
+    };
+  },
 };
+
+const mapExplanation = (explanation: AIWordExplanation): WordExplanation => ({
+  word: explanation.word,
+  contextualMeaning: explanation.contextualMeaning,
+  simpleExplanation: explanation.simpleEnglish,
+  translation: explanation.translation,
+  pronunciation: explanation.pronunciation,
+  partOfSpeech: explanation.partOfSpeech,
+  synonyms: explanation.synonyms,
+  exampleSentence: explanation.example,
+});

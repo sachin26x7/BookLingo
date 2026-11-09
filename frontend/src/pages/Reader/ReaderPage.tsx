@@ -116,6 +116,7 @@ const ReaderPage: React.FC = () => {
   const [meaningLanguage, setMeaningLanguage] = useState<SupportedLanguage>(
     () => SUPPORTED_LANGUAGES.find((language) => language === user?.preferredLanguage) || 'Hindi'
   );
+  const [isTranslationLoading, setIsTranslationLoading] = useState(false);
   const [showFontPanel, setShowFontPanel] = useState(false);
   const [sessionStart] = useState(Date.now());
 
@@ -136,6 +137,9 @@ const ReaderPage: React.FC = () => {
     } | null;
   } | null>(null);
   const lastTouchEndRef = useRef(0);
+  const translationRequestRef = useRef(0);
+  const translationRef = useRef<{ word: string; language: SupportedLanguage; value: string } | null>(null);
+  const meaningLanguageRef = useRef(meaningLanguage);
   const pdfUrl = bookId ? booksService.getFileUrl(bookId) : '';
   const pdfOptions = useMemo(() => accessToken ? {
     httpHeaders: { Authorization: `Bearer ${accessToken}` },
@@ -316,16 +320,24 @@ const ReaderPage: React.FC = () => {
     (async () => {
       setIsExplaining(true);
       try {
-        const { data } = await aiService.explainWord({
+        const contextualMeaning = await aiService.explainContext({
           word: selectedWord.word,
           sentence: selectedWord.sentence,
           paragraph: selectedWord.paragraph,
           previousSentence: selectedWord.previousSentence,
           nextSentence: selectedWord.nextSentence,
-          targetLanguage: meaningLanguage,
           userLevel: user?.proficiencyLevel || 'intermediate',
         });
-        if (active) setExplanation(data.data || null);
+        if (active) {
+          const currentTranslation = translationRef.current;
+          setExplanation({
+            ...contextualMeaning,
+            translation: currentTranslation?.word === selectedWord.word &&
+              currentTranslation.language === meaningLanguageRef.current
+              ? currentTranslation.value
+              : '',
+          });
+        }
       } catch {
         if (active) {
           toast.error('Could not load explanation');
@@ -336,7 +348,46 @@ const ReaderPage: React.FC = () => {
       }
     })();
     return () => { active = false; };
-  }, [selectedWord, popupVisible, meaningLanguage, user?.proficiencyLevel, setExplanation, setIsExplaining]);
+  }, [selectedWord, popupVisible, user?.proficiencyLevel, setExplanation, setIsExplaining]);
+
+  useEffect(() => {
+    if (!selectedWord || !popupVisible) return;
+    let active = true;
+    const requestId = ++translationRequestRef.current;
+    const language = meaningLanguage;
+    translationRef.current = { word: selectedWord.word, language, value: '' };
+    const currentExplanation = useReaderStore.getState().explanation;
+    if (currentExplanation) {
+      setExplanation({ ...currentExplanation, translation: '' });
+    }
+    setIsTranslationLoading(true);
+
+    (async () => {
+      try {
+        const { data } = await aiService.translateWord({ word: selectedWord.word, targetLanguage: language });
+        if (!active || requestId !== translationRequestRef.current) return;
+        const translation = data.data.translation;
+        translationRef.current = { word: selectedWord.word, language, value: translation };
+        const reader = useReaderStore.getState();
+        if (reader.selectedWord?.word === selectedWord.word && reader.explanation) {
+          setExplanation({ ...reader.explanation, translation });
+        }
+      } catch {
+        if (active && requestId === translationRequestRef.current) {
+          toast.error(`Could not translate into ${language}`);
+        }
+      } finally {
+        if (active && requestId === translationRequestRef.current) setIsTranslationLoading(false);
+      }
+    })();
+
+    return () => { active = false; };
+  }, [selectedWord, popupVisible, meaningLanguage, setExplanation]);
+
+  const changeMeaningLanguage = (language: SupportedLanguage) => {
+    meaningLanguageRef.current = language;
+    setMeaningLanguage(language);
+  };
 
   /* ── Save word ── */
   const saveWord = async () => {
@@ -795,9 +846,10 @@ const ReaderPage: React.FC = () => {
             isLoading={isExplaining}
             targetLanguage={meaningLanguage}
             languages={SUPPORTED_LANGUAGES}
-            onTargetLanguageChange={setMeaningLanguage}
+            onTargetLanguageChange={changeMeaningLanguage}
             onClose={hidePopup}
             onSave={saveWord}
+            isTranslationLoading={isTranslationLoading}
           />
         )}
       </div>

@@ -15,12 +15,13 @@ interface WordPopupProps {
   onTargetLanguageChange: (language: SupportedLanguage) => void;
   onClose: () => void;
   onSave: () => void;
+  isTranslationLoading: boolean;
 }
 
 /** Compact "mini" view shown first; "More" expands full detail */
 const WordPopup: React.FC<WordPopupProps> = ({
   word, position, explanation, isLoading, targetLanguage, languages,
-  onTargetLanguageChange, onClose, onSave,
+  onTargetLanguageChange, onClose, onSave, isTranslationLoading,
 }) => {
   const popupRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -134,6 +135,7 @@ const WordPopup: React.FC<WordPopupProps> = ({
             onSave={onSave}
             onSpeak={speak}
             onCopy={copy}
+            isTranslationLoading={isTranslationLoading}
           />
         </div>
       </>
@@ -178,6 +180,7 @@ const WordPopup: React.FC<WordPopupProps> = ({
         onSave={onSave}
         onSpeak={speak}
         onCopy={copy}
+        isTranslationLoading={isTranslationLoading}
       />
     </div>
   );
@@ -197,12 +200,13 @@ interface BodyProps {
   onSave: () => void;
   onSpeak: () => void;
   onCopy: () => void;
+  isTranslationLoading: boolean;
 }
 
 const PopupBody: React.FC<BodyProps> = ({
   word, explanation, isLoading, expanded, setExpanded,
   targetLanguage, languages, onTargetLanguageChange,
-  onClose, onSave, onSpeak, onCopy,
+  onClose, onSave, onSpeak, onCopy, isTranslationLoading,
 }) => (
   <div>
     {/* ── Header ── */}
@@ -308,6 +312,7 @@ const PopupBody: React.FC<BodyProps> = ({
           targetLanguage={targetLanguage}
           setExpanded={setExpanded}
           onSave={onSave}
+          isTranslationLoading={isTranslationLoading}
         />
       ) : (
         <div style={{
@@ -364,7 +369,8 @@ const ExplanationContent: React.FC<{
   targetLanguage: string;
   setExpanded: (v: boolean) => void;
   onSave: () => void;
-}> = ({ explanation, expanded, targetLanguage, setExpanded, onSave }) => (
+  isTranslationLoading: boolean;
+}> = ({ explanation, expanded, targetLanguage, setExpanded, onSave, isTranslationLoading }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
 
     {/* Contextual meaning — always visible */}
@@ -395,7 +401,7 @@ const ExplanationContent: React.FC<{
     </div>
 
     {/* Translation — always visible */}
-    {explanation.translation && (
+    {(explanation.translation || isTranslationLoading) && (
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -409,7 +415,7 @@ const ExplanationContent: React.FC<{
             Meaning in {targetLanguage}
           </p>
           <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text-primary)', fontFamily: "'Lora', serif" }}>
-            {explanation.translation}
+            {isTranslationLoading ? 'Loading translation…' : explanation.translation}
           </p>
         </div>
       </div>
@@ -419,6 +425,7 @@ const ExplanationContent: React.FC<{
     <div style={{ display: 'flex', gap: 7 }}>
       <button
         onClick={onSave}
+        disabled={!explanation.translation || isTranslationLoading}
         className="btn btn-primary btn-sm"
         style={{ flex: 1 }}
         aria-label="Save word to vocabulary"

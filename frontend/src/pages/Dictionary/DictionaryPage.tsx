@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, Volume2, Loader2, Bookmark, Languages, X, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { aiService, vocabularyService } from '../../services/vocabulary.service';
@@ -28,25 +28,49 @@ const DictionaryPage: React.FC = () => {
   const [result, setResult]         = useState<WordExplanation | null>(null);
   const [isLoading, setIsLoading]   = useState(false);
   const [isSaving, setIsSaving]     = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const resultWord = result?.word;
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim()) return;
     setIsLoading(true);
+    setIsTranslating(false);
     setResult(null);
     try {
-      const { data } = await aiService.explainWord({
+      const explanation = await aiService.explainContext({
         word: word.trim(),
         sentence: sentence.trim() || word.trim(),
-        targetLanguage: targetLang,
         userLevel: user?.proficiencyLevel || 'intermediate',
       });
-      setResult(data.data || null);
+      setIsTranslating(true);
+      setResult(explanation);
     } catch {
       toast.error('Could not fetch explanation');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!resultWord) return;
+    let active = true;
+    void aiService.translateWord({ word: resultWord, targetLanguage: targetLang })
+      .then(({ data }) => {
+        if (active) setResult((current) => current ? { ...current, translation: data.data.translation } : current);
+      })
+      .catch(() => {
+        if (active) toast.error(`Could not translate into ${targetLang}`);
+      })
+      .finally(() => {
+        if (active) setIsTranslating(false);
+      });
+    return () => { active = false; };
+  }, [resultWord, targetLang]);
+
+  const handleTargetLanguageChange = (language: string) => {
+    if (resultWord) setIsTranslating(true);
+    setTargetLang(language);
   };
 
   const speak = () => {
@@ -82,7 +106,7 @@ const DictionaryPage: React.FC = () => {
     }
   };
 
-  const reset = () => { setWord(''); setSentence(''); setResult(null); };
+  const reset = () => { setWord(''); setSentence(''); setResult(null); setIsTranslating(false); };
 
   return (
     <div style={{ padding: '36px 40px', maxWidth: 740 }}>
@@ -129,7 +153,7 @@ const DictionaryPage: React.FC = () => {
           <select
             className="input"
             value={targetLang}
-            onChange={(e) => setTargetLang(e.target.value)}
+            onChange={(e) => handleTargetLanguageChange(e.target.value)}
             style={{ width: 128 }}
             aria-label="Target language"
           >
@@ -249,7 +273,7 @@ const DictionaryPage: React.FC = () => {
               {/* Save button */}
               <button
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={isSaving || isTranslating || !result.translation}
                 className="btn btn-primary btn-sm"
                 aria-label="Save to vocabulary"
               >
@@ -288,7 +312,7 @@ const DictionaryPage: React.FC = () => {
             marginBottom: 14,
           }}>
             {/* Translation */}
-            {result.translation && (
+            {(result.translation || isTranslating) && (
               <div className="card" style={{ padding: '20px 22px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <SectionLabel>Translation</SectionLabel>
@@ -302,7 +326,7 @@ const DictionaryPage: React.FC = () => {
                   fontFamily: "'Lora', serif",
                   color: 'var(--text-primary)', lineHeight: 1.2,
                 }}>
-                  {result.translation}
+                  {isTranslating ? 'Loading translation…' : result.translation}
                 </p>
               </div>
             )}
