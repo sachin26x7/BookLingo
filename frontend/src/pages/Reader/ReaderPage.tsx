@@ -61,6 +61,13 @@ const ReaderPage: React.FC = () => {
   const progressTimer  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const progressRequest = useRef<Promise<void>>(Promise.resolve());
   const fontPanelRef   = useRef<HTMLDivElement>(null);
+  const touchSelectionRef = useRef<{
+    anchorNode: Node | null;
+    anchorOffset: number;
+    focusNode: Node | null;
+    focusOffset: number;
+  } | null>(null);
+  const lastTouchEndRef = useRef(0);
   const pdfUrl = bookId ? booksService.getFileUrl(bookId) : '';
   const pdfOptions = useMemo(() => accessToken ? {
     httpHeaders: { Authorization: `Bearer ${accessToken}` },
@@ -182,7 +189,12 @@ const ReaderPage: React.FC = () => {
     const selected = sel.toString().trim();
     if (selected.length < 2 || selected.length > 200) return;
 
-    const range    = sel.getRangeAt(0);
+    const range = sel.getRangeAt(0);
+    const getTextLayer = (node: Node) =>
+      node instanceof Element ? node.closest('.textLayer') : node.parentElement?.closest('.textLayer');
+    const textLayer = getTextLayer(range.startContainer);
+    if (!textLayer || textLayer !== getTextLayer(range.endContainer) || !pageRef.current?.contains(textLayer)) return;
+
     const fullText = range.startContainer.textContent || '';
     const sentences = fullText.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((part) => part.trim()) || [];
     const sentenceIndex = sentences.findIndex((part) => part.includes(selected));
@@ -565,12 +577,33 @@ const ReaderPage: React.FC = () => {
           position: 'relative',
         }}
         onMouseUp={(event) => {
+          if (Date.now() - lastTouchEndRef.current < 750) return;
           if (event.target instanceof Element && event.target.closest('[data-word-popup]')) return;
           handleTextSelection();
         }}
+        onTouchStart={() => {
+          const selection = window.getSelection();
+          touchSelectionRef.current = selection ? {
+            anchorNode: selection.anchorNode,
+            anchorOffset: selection.anchorOffset,
+            focusNode: selection.focusNode,
+            focusOffset: selection.focusOffset,
+          } : null;
+        }}
         onTouchEnd={(event) => {
           if (event.target instanceof Element && event.target.closest('[data-word-popup]')) return;
-          handleTextSelection();
+          lastTouchEndRef.current = Date.now();
+          const previous = touchSelectionRef.current;
+          requestAnimationFrame(() => {
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) return;
+            if (previous &&
+              previous.anchorNode === selection.anchorNode &&
+              previous.anchorOffset === selection.anchorOffset &&
+              previous.focusNode === selection.focusNode &&
+              previous.focusOffset === selection.focusOffset) return;
+            handleTextSelection();
+          });
         }}
       >
         <div style={{
